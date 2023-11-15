@@ -2,11 +2,23 @@ import type { Track, TrackImage } from "@/lib/definitions";
 
 export const tracks: Track[] = [
   {
-    id: "1",
-    title: "Track 1",
+    id: "0",
+    title: "0_initializer",
     artist: "Kalyn Beach",
-    record: "Record 1",
-    src: "https://www.kalynbeach.com/music/track-1.mp3",
+    record: "Record 0",
+    src: "https://kkb-sounds.s3.us-west-1.amazonaws.com/loops/0_initializer.wav",
+    image: {
+      src: "https://via.placeholder.com/256x256",
+      alt: "Track 0"
+    },
+    loop: true
+  },
+  {
+    id: "1",
+    title: "1_workflows",
+    artist: "Kalyn Beach",
+    record: "Record 0",
+    src: "https://kkb-sounds.s3.us-west-1.amazonaws.com/loops/1_workflows.wav",
     image: {
       src: "https://via.placeholder.com/256x256",
       alt: "Track 1"
@@ -15,25 +27,13 @@ export const tracks: Track[] = [
   },
   {
     id: "2",
-    title: "Track 2",
+    title: "2_stasis",
     artist: "Kalyn Beach",
-    record: "Record 2",
-    src: "https://www.kalynbeach.com/music/track-2.mp3",
+    record: "Record 0",
+    src: "https://kkb-sounds.s3.us-west-1.amazonaws.com/loops/2_stasis.wav",
     image: {
       src: "https://via.placeholder.com/256x256",
       alt: "Track 2"
-    },
-    loop: true
-  },
-  {
-    id: "3",
-    title: "Track 3",
-    artist: "Kalyn Beach",
-    record: "Record 3",
-    src: "https://www.kalynbeach.com/music/track-3.mp3",
-    image: {
-      src: "https://via.placeholder.com/256x256",
-      alt: "Track 3"
     },
     loop: true
   },
