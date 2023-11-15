@@ -12,7 +12,7 @@ export default function WavePlayer({ tracks }: WavePlayerProps) {
   const currentTrack: Track = tracks[0];
 
   return (
-    <div className="wave-player w-fit md:w-full md:max-w-3xl p-2 flex flex-col gap-2 md:flex-row border">
+    <div className="wave-player w-fit md:w-full md:max-w-3xl p-2 flex flex-col gap-2 md:flex-row border rounded-sm">
       <div className="flex">
         <TrackImage />
       </div>

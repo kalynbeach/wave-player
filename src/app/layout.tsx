@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
-import { cn } from "@/lib/utils";
 import { GeistSans } from "geist/font/sans";
+import { cn } from "@/lib/utils";
+import ThemeProvider from "@/components/theme-provider";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
@@ -19,7 +20,14 @@ export default function RootLayout({
         "min-h-screen bg-background font-sans antialiased",
         GeistSans.variable
       )}>
-        {children}
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          {children}
+        </ThemeProvider>
       </body>
     </html>
   )
