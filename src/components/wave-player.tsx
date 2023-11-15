@@ -12,10 +12,14 @@ export default function WavePlayer({ tracks }: WavePlayerProps) {
   const currentTrack: Track = tracks[0];
 
   return (
-    <div className="wave-player flex flex-col md:flex-row p-4 border">
-      <TrackImage />
-      <TrackInfo track={currentTrack} />
-      <TrackControls track={currentTrack} />
+    <div className="wave-player w-fit md:w-full md:max-w-3xl p-2 flex flex-col gap-2 md:flex-row border">
+      <div className="flex">
+        <TrackImage />
+      </div>
+      <div className="w-full flex flex-col gap-2 justify-between">
+        <TrackInfo track={currentTrack} />
+        <TrackControls track={currentTrack} />
+      </div>
       {/* Track Info */}
       {/* Track Controls */}
     </div>

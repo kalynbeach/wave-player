@@ -7,9 +7,9 @@ type TrackInfoProps = {
 
 export default function TrackInfo({ track }: TrackInfoProps) {
   return (
-    <div className="flex flex-col">
-      <span className="">{track.title}</span>
-      <span className="">{track.artist}</span>
+    <div className="track-info h-full flex flex-col justify-between">
+      <span className="text-xl font-bold">{track.title}</span>
+      <span className="text-lg font-medium">{track.artist}</span>
       <span className="">{track.record}</span>
     </div>
   );

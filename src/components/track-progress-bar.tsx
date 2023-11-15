@@ -6,7 +6,7 @@ type TrackProgressBar = {
 
 export default function TrackProgressBar({ track }: TrackProgressBar) {
   return (
-    <div className="flex flex-row">
+    <div className="track-progress-bar flex flex-row">
       <input
         type="range"
         className="w-full"

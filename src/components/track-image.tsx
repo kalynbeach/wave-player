@@ -7,7 +7,7 @@ type TrackImageProps = {
 
 export default function TrackImage({ image }: TrackImageProps) {
   return (
-    <div className="flex">
+    <div className="track-image flex border">
       { image ? (
         <Image
           src={image.src}
@@ -16,7 +16,7 @@ export default function TrackImage({ image }: TrackImageProps) {
           height={256}
         />
       ) : (
-        <div className="w-64 h-64 flex items-center justify-center bg-neutral-100">
+        <div className="w-64 h-64 md:w-32 md:h-32 flex items-center justify-center bg-neutral-100">
           <span>🎵</span>
         </div>
       ) }
