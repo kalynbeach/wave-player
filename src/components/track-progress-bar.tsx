@@ -4,9 +4,10 @@ type TrackProgressBar = {
   track: Track;
   trackDuration: number;
   currentTime: number;
+  rangeInputRef: React.RefObject<HTMLInputElement>;
 };
 
-export default function TrackProgressBar({ track, trackDuration, currentTime }: TrackProgressBar) {
+export default function TrackProgressBar({ track, trackDuration, currentTime, rangeInputRef }: TrackProgressBar) {
 
   function formattedTime(time: number): string {
     if (time === 0) return `00:00`;
@@ -15,6 +16,10 @@ export default function TrackProgressBar({ track, trackDuration, currentTime }: 
     const formattedMinutes = minutes < 10 ? `0${minutes}` : `${minutes}`;
     const formattedSeconds = seconds < 10 ? `0${seconds}` : `${seconds}`;
     return `${formattedMinutes}:${formattedSeconds}`;
+  }
+
+  function onProgressBarChange(event: React.ChangeEvent<HTMLInputElement>) {
+    console.log(`[TrackProgressBar] onProgressBarChange: `, event.target.value);
   }
 
   return (
@@ -28,8 +33,10 @@ export default function TrackProgressBar({ track, trackDuration, currentTime }: 
       <div className="flex flex-row items-center justify-center">
         <input
           type="range"
+          ref={rangeInputRef}
+          defaultValue={0}
+          onChange={onProgressBarChange}
           className="accent-green-600 dark:accent-green-400"
-          // ref
         />
       </div>
 

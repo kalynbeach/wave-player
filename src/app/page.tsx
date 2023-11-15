@@ -4,12 +4,15 @@ import { tracks } from "@/lib/placeholder-data";
 
 export default function Home() {
   return (
-    <main className="p-24 flex min-h-screen flex-col gap-10 items-center justify-center">
-      <h1 className="text-xl font-bold">wave-player</h1>
+    <main className="p-14 flex min-h-screen flex-col gap-14 items-center justify-center">
+      <div className="w-full max-w-3xl flex flex-row items-center justify-between">
+        <h1 className="text-xl font-bold">wave-player</h1>
+        <ThemeToggle />
+      </div>
       <WavePlayer
+        id="1337"
         tracks={tracks}
       />
-      <ThemeToggle />
     </main>
   )
 }

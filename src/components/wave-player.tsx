@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { Track } from "@/lib/definitions";
 import TrackImage from "@/components/track-image";
 import TrackInfo from "@/components/track-info";
@@ -23,6 +23,8 @@ export default function WavePlayer({ id, tracks }: WavePlayerProps) {
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isLooping, setIsLooping] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+
+  const rangeInputRef = useRef<HTMLInputElement>(null);
 
   // Create audio context (Web Audio API AudioContext)
   useEffect(() => {
@@ -49,7 +51,6 @@ export default function WavePlayer({ id, tracks }: WavePlayerProps) {
         setTrackDuration(sourceNode.buffer.duration);
         setAudioSourceNode(sourceNode);
         setIsInitialized(true);
-        console.log(`[WavePlayer] resBlob: `, resBlob);
         console.log(`[WavePlayer] audioSourceNode.buffer: `, sourceNode.buffer);
       } catch (error) {
         throw new Error(`[WavePlayer] Error initializing audio: ${error}`);
@@ -133,6 +134,7 @@ export default function WavePlayer({ id, tracks }: WavePlayerProps) {
           previous={previousTrack}
           next={nextTrack}
           mute={toggleMute}
+          rangeInputRef={rangeInputRef}
         />
       </div>
     </div>

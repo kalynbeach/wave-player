@@ -21,6 +21,7 @@ type TrackControlsProps = {
   previous: () => void;
   next: () => void;
   mute: () => void;
+  rangeInputRef: React.RefObject<HTMLInputElement>;
 };
 
 export default function TrackControls({
@@ -33,44 +34,46 @@ export default function TrackControls({
   previous,
   next,
   mute,
+  rangeInputRef,
 }: TrackControlsProps) {
   const isMuted = false;
 
   return (
-    <div className="track-controls w-full flex flex-col md:flex-row items-center justify-between">
+    <div className="track-controls w-full flex flex-col md:flex-row gap-2 items-center justify-between">
   
       <div className="w-full flex flex-row items-center justify-between md:justify-start md:gap-2">
         <div className="flex">
           {/* Loop */}
-          <Button variant="ghost" size="icon" className="rounded-sm">
-            <LoopIcon />
+          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm">
+            <LoopIcon className="w-5 h-5" />
           </Button>
         </div>
 
         <div className="flex flex-row gap-2">
           {/* Previous */}
-          <Button variant="ghost" size="icon" className="rounded-sm" onClick={play}>
-            <TrackPreviousIcon />
+          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={play}>
+            <TrackPreviousIcon className="w-5 h-5" />
           </Button>
           {/* Play/Pause */}
-          <Button variant="ghost" size="icon" className="rounded-sm" onClick={isPlaying ? pause : play}>
-            { isPlaying ? <PauseIcon /> : <PlayIcon /> }
+          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={isPlaying ? pause : play}>
+            { isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" /> }
           </Button>
           {/* Next */}
-          <Button variant="ghost" size="icon" className="rounded-sm" onClick={next}>
-            <TrackNextIcon />
+          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={next}>
+            <TrackNextIcon className="w-5 h-5" />
           </Button>
         </div>
         
         <div className="flex">
           {/* Volume */}
-          <Button variant="ghost" size="icon" className="rounded-sm" onClick={mute}>
-            { isMuted ? <SpeakerOffIcon /> : <SpeakerLoudIcon />}
+          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={mute}>
+            { isMuted ? <SpeakerOffIcon className="w-5 h-5" /> : <SpeakerLoudIcon className="w-5 h-5" />}
           </Button>
         </div>
       </div>
   
       <TrackProgressBar
+        rangeInputRef={rangeInputRef}
         track={track}
         trackDuration={trackDuration}
         currentTime={currentTime}
