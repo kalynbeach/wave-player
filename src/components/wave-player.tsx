@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
 import type { Track } from "@/lib/definitions";
+import { useState, useEffect, useRef } from "react";
 import TrackImage from "@/components/track-image";
 import TrackInfo from "@/components/track-info";
 import TrackControls from "@/components/track-controls";
@@ -14,7 +14,7 @@ type WavePlayerProps = {
 export default function WavePlayer({ id, tracks }: WavePlayerProps) {
   const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
   const [audioSourceNode, setAudioSourceNode] = useState<AudioBufferSourceNode | null>(null);
-  const [currentTrack, setCurrentTrack] = useState<Track>(tracks[0]);
+  const [track, setTrack] = useState<Track>(tracks[0]);
   const [trackDuration, setTrackDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
   const [startTime, setStartTime] = useState<number>(0);
@@ -40,7 +40,7 @@ export default function WavePlayer({ id, tracks }: WavePlayerProps) {
       if (!audioContext) return;
       try {
         const fetchInit: RequestInit = { method: 'GET', mode: 'cors' };
-        const res = await fetch(currentTrack.src, fetchInit);
+        const res = await fetch(track.src, fetchInit);
         const resBlob = await res.blob();
         const audioBuffer = await resBlob.arrayBuffer();
         const decodedAudioBuffer = await audioContext.decodeAudioData(audioBuffer);
@@ -60,9 +60,7 @@ export default function WavePlayer({ id, tracks }: WavePlayerProps) {
       console.log(`[WavePlayer] Initializing audio...`);
       initializeAudio();
     }
-  }, [audioContext, currentTrack, isInitialized, isLooping]);
-
-  // Track control functions (play/pause, prev/next, mute, etc.)
+  }, [audioContext, track, isInitialized, isLooping]);
 
   function playTrack() {
     if (!audioContext || !audioSourceNode || !audioSourceNode.buffer || !isInitialized) return;
@@ -92,7 +90,7 @@ export default function WavePlayer({ id, tracks }: WavePlayerProps) {
     setIsPlaying(false);
     setStartOffset(0);
     setCurrentTime(0);
-    setCurrentTrack(tracks[tracks.indexOf(currentTrack) - 1]);
+    setTrack(tracks[tracks.indexOf(track) - 1]);
     setIsInitialized(false);
     console.log(`[WavePlayer] previousTrack called.`);
   }
@@ -105,7 +103,7 @@ export default function WavePlayer({ id, tracks }: WavePlayerProps) {
     setIsPlaying(false);
     setStartOffset(0);
     setCurrentTime(0);
-    setCurrentTrack(tracks[tracks.indexOf(currentTrack) + 1]);
+    setTrack(tracks[tracks.indexOf(track) + 1]);
     setIsInitialized(false);
     console.log(`[WavePlayer] nextTrack called.`);
   }
@@ -123,9 +121,9 @@ export default function WavePlayer({ id, tracks }: WavePlayerProps) {
         <TrackImage />
       </div>
       <div className="w-full flex flex-col gap-2 justify-between">
-        <TrackInfo track={currentTrack} />
+        <TrackInfo track={track} />
         <TrackControls
-          track={currentTrack}
+          track={track}
           trackDuration={trackDuration}
           currentTime={currentTime}
           isPlaying={isPlaying}
