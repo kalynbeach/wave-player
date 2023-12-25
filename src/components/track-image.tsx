@@ -14,6 +14,7 @@ export default function TrackImage({ image }: TrackImageProps) {
           alt={image.alt}
           width={256}
           height={256}
+          priority
         />
       ) : (
         <div className="w-64 h-64 md:w-32 md:h-32 flex items-center justify-center bg-neutral-100">

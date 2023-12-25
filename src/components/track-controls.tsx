@@ -16,6 +16,8 @@ type TrackControlsProps = {
   trackDuration: number;
   currentTime: number;
   isPlaying: boolean;
+  isLooping: boolean;
+  isMuted: boolean;
   play: () => void;
   pause: () => void;
   previous: () => void;
@@ -29,6 +31,8 @@ export default function TrackControls({
   trackDuration,
   currentTime,
   isPlaying,
+  isLooping,
+  isMuted,
   play,
   pause,
   previous,
@@ -36,8 +40,6 @@ export default function TrackControls({
   mute,
   rangeInputRef,
 }: TrackControlsProps) {
-  const isMuted = false;
-
   return (
     <div className="track-controls w-full flex flex-col md:flex-row gap-2 items-center justify-between">
   
@@ -51,7 +53,7 @@ export default function TrackControls({
 
         <div className="flex flex-row gap-2">
           {/* Previous */}
-          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={play}>
+          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={previous}>
             <TrackPreviousIcon className="w-5 h-5" />
           </Button>
           {/* Play/Pause */}
@@ -73,10 +75,10 @@ export default function TrackControls({
       </div>
   
       <TrackProgressBar
-        rangeInputRef={rangeInputRef}
         track={track}
         trackDuration={trackDuration}
         currentTime={currentTime}
+        rangeInputRef={rangeInputRef}
       />
     </div>
   );

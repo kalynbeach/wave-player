@@ -11,7 +11,7 @@ export default function Home() {
       </div>
       <WavePlayer
         id="1337"
-        tracks={tracks}
+        playlist={tracks}
       />
     </main>
   )

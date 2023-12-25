@@ -1,138 +1,128 @@
 "use client";
 
-import type { Track } from "@/lib/definitions";
 import { useState, useEffect, useRef } from "react";
 import TrackImage from "@/components/track-image";
 import TrackInfo from "@/components/track-info";
 import TrackControls from "@/components/track-controls";
+import type { Track } from "@/lib/definitions";
 
 type WavePlayerProps = {
   id: string;
-  tracks: Track[];
+  playlist: Track[];
 };
 
-export default function WavePlayer({ id, tracks }: WavePlayerProps) {
-  const [audioContext, setAudioContext] = useState<AudioContext | null>(null);
-  const [audioSourceNode, setAudioSourceNode] = useState<AudioBufferSourceNode | null>(null);
-  const [track, setTrack] = useState<Track>(tracks[0]);
+export default function WavePlayer({ id, playlist }: WavePlayerProps) {
+  const [track, setTrack] = useState<Track>(playlist[0]);
   const [trackDuration, setTrackDuration] = useState<number>(0);
   const [currentTime, setCurrentTime] = useState<number>(0);
-  const [startTime, setStartTime] = useState<number>(0);
-  const [startOffset, setStartOffset] = useState<number>(0);
-  const [isInitialized, setIsInitialized] = useState<boolean>(false);
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [isLooping, setIsLooping] = useState<boolean>(false);
+  const [isLooping, setIsLooping] = useState<boolean>(true);
   const [isMuted, setIsMuted] = useState<boolean>(false);
+  const [volume, setVolume] = useState<number>(1);
 
-  const rangeInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioSourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const audioGainNodeRef = useRef<GainNode | null>(null);
+  const progressBarRef = useRef<HTMLInputElement>(null);
 
-  // Create audio context (Web Audio API AudioContext)
   useEffect(() => {
-    if (!audioContext) {
+    if (!audioContextRef.current) {
       console.log(`[WavePlayer] Creating AudioContext...`);
-      setAudioContext(new AudioContext());
+      audioContextRef.current = new AudioContext();
     }
-  }, [audioContext]);
+    if (!audioRef.current) return;
+    setTrackDuration(audioRef.current.duration);
+  }, []);
 
-  // Initialize audio (AudioContext, AudioSourceNode, etc.)
-  useEffect(() => {
-    async function initializeAudio() {
-      if (!audioContext) return;
-      try {
-        const fetchInit: RequestInit = { method: 'GET', mode: 'cors' };
-        const res = await fetch(track.src, fetchInit);
-        const resBlob = await res.blob();
-        const audioBuffer = await resBlob.arrayBuffer();
-        const decodedAudioBuffer = await audioContext.decodeAudioData(audioBuffer);
-        const sourceNode = audioContext.createBufferSource();
-        sourceNode.buffer = decodedAudioBuffer;
-        sourceNode.loop = isLooping;
-        sourceNode.connect(audioContext.destination);
-        setTrackDuration(sourceNode.buffer.duration);
-        setAudioSourceNode(sourceNode);
-        setIsInitialized(true);
-        console.log(`[WavePlayer] audioSourceNode.buffer: `, sourceNode.buffer);
-      } catch (error) {
-        throw new Error(`[WavePlayer] Error initializing audio: ${error}`);
-      }
-    }
-    if (!isInitialized) {
-      console.log(`[WavePlayer] Initializing audio...`);
-      initializeAudio();
-    }
-  }, [audioContext, track, isInitialized, isLooping]);
+  // useEffect(() => {
+  //   if (!audioContextRef.current || !audioRef.current) return;
+  // }, [track]);
+
+  function onLoadedMetadata() {
+    console.log(`[WavePlayer] onLoadedMetadata called.`);
+    if (!audioRef.current) return;
+    setTrackDuration(audioRef.current.duration);
+  }
+
+  function onTimeUpdate() {
+    console.log(`[WavePlayer] onTimeUpdate called.`);
+    if (!audioRef.current || currentTime === audioRef.current.currentTime) return;
+    setCurrentTime(audioRef.current.currentTime);
+  }
 
   function playTrack() {
-    if (!audioContext || !audioSourceNode || !audioSourceNode.buffer || !isInitialized) return;
-    setStartTime(audioContext.currentTime);
-    audioSourceNode.start(
-      audioContext.currentTime,
-      startOffset % audioSourceNode.buffer.duration
-    );
-    setIsPlaying(true);
     console.log(`[WavePlayer] playTrack called.`);
+    if (!audioRef.current) return;
+    audioRef.current.play();
+    setIsPlaying(true);
   }
 
   function pauseTrack() {
-    if (!audioContext || !audioSourceNode || !audioSourceNode.buffer || !isInitialized) return;
-    audioSourceNode.stop();
-    setIsPlaying(false);
-    setStartOffset(startOffset + audioContext.currentTime - startTime);
-    setCurrentTime(audioContext.currentTime - startTime);
     console.log(`[WavePlayer] pauseTrack called.`);
+    if (!audioRef.current) return;
+    audioRef.current.pause();
+    setIsPlaying(false);
   }
 
   function previousTrack() {
-    if (!audioContext || !audioSourceNode || !audioSourceNode.buffer || !isInitialized) return;
-    if (isPlaying) {
-      audioSourceNode.stop();
-    }
-    setIsPlaying(false);
-    setStartOffset(0);
-    setCurrentTime(0);
-    setTrack(tracks[tracks.indexOf(track) - 1]);
-    setIsInitialized(false);
     console.log(`[WavePlayer] previousTrack called.`);
+    if (playlist.indexOf(track) > 0) {
+      setTrack(playlist[playlist.indexOf(track) - 1]);
+    } else {
+      setTrack(playlist[playlist.length - 1]);
+    }
   }
 
   function nextTrack() {
-    if (!audioContext || !audioSourceNode || !audioSourceNode.buffer || !isInitialized) return;
-    if (isPlaying) {
-      audioSourceNode.stop();
-    }
-    setIsPlaying(false);
-    setStartOffset(0);
-    setCurrentTime(0);
-    setTrack(tracks[tracks.indexOf(track) + 1]);
-    setIsInitialized(false);
     console.log(`[WavePlayer] nextTrack called.`);
+    if (playlist.indexOf(track) < playlist.length - 1) {
+      setTrack(playlist[playlist.indexOf(track) + 1]);
+    } else {
+      setTrack(playlist[0]);
+    }
   }
 
   function toggleMute() {
-    if (!audioContext || !audioSourceNode || !audioSourceNode.buffer || !isInitialized) return;
-    // TODO: Implement mute/unmute via GainNode
-    setIsMuted(!isMuted);
     console.log(`[WavePlayer] toggleMute called.`);
+    setIsMuted(!isMuted);
   }
 
   return (
     <div className="wave-player w-fit md:w-full md:max-w-3xl p-2 flex flex-col gap-2 md:flex-row border rounded-sm">
+      <audio
+        ref={audioRef}
+        src={track.src}
+        muted={isMuted}
+        loop={isLooping}
+        defaultValue={track.src}
+        onLoadedMetadata={onLoadedMetadata}
+        onTimeUpdate={onTimeUpdate}
+        crossOrigin="anonymous"
+        preload="metadata"
+      ></audio>
       <div className="flex">
-        <TrackImage />
+        <TrackImage
+          image={track.image}
+        />
       </div>
       <div className="w-full flex flex-col gap-2 justify-between">
-        <TrackInfo track={track} />
+        <TrackInfo
+          track={track}
+        />
         <TrackControls
           track={track}
           trackDuration={trackDuration}
           currentTime={currentTime}
           isPlaying={isPlaying}
+          isLooping={isLooping}
+          isMuted={isMuted}
           play={playTrack}
           pause={pauseTrack}
           previous={previousTrack}
           next={nextTrack}
           mute={toggleMute}
-          rangeInputRef={rangeInputRef}
+          rangeInputRef={progressBarRef}
         />
       </div>
     </div>
