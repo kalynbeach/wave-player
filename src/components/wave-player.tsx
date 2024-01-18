@@ -21,10 +21,11 @@ export default function WavePlayer({ id, playlist }: WavePlayerProps) {
   const [volume, setVolume] = useState<number>(1);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioSourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
-  const audioGainNodeRef = useRef<GainNode | null>(null);
   const progressBarRef = useRef<HTMLInputElement>(null);
+  
+  const audioContextRef = useRef<AudioContext | null>(null);
+  // const audioSourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  // const audioGainNodeRef = useRef<GainNode | null>(null);
 
   useEffect(() => {
     if (!audioContextRef.current) {
@@ -34,10 +35,6 @@ export default function WavePlayer({ id, playlist }: WavePlayerProps) {
     if (!audioRef.current) return;
     setTrackDuration(audioRef.current.duration);
   }, []);
-
-  // useEffect(() => {
-  //   if (!audioContextRef.current || !audioRef.current) return;
-  // }, [track]);
 
   function onLoadedMetadata() {
     console.log(`[WavePlayer] onLoadedMetadata called.`);
@@ -122,7 +119,8 @@ export default function WavePlayer({ id, playlist }: WavePlayerProps) {
           previous={previousTrack}
           next={nextTrack}
           mute={toggleMute}
-          rangeInputRef={progressBarRef}
+          audioRef={audioRef}
+          progressBarRef={progressBarRef}
         />
       </div>
     </div>

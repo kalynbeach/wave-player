@@ -23,7 +23,8 @@ type TrackControlsProps = {
   previous: () => void;
   next: () => void;
   mute: () => void;
-  rangeInputRef: React.RefObject<HTMLInputElement>;
+  audioRef: React.RefObject<HTMLAudioElement>;
+  progressBarRef: React.RefObject<HTMLInputElement>;
 };
 
 export default function TrackControls({
@@ -38,7 +39,8 @@ export default function TrackControls({
   previous,
   next,
   mute,
-  rangeInputRef,
+  audioRef,
+  progressBarRef,
 }: TrackControlsProps) {
   return (
     <div className="track-controls w-full flex flex-col md:flex-row gap-2 items-center justify-between">
@@ -75,10 +77,10 @@ export default function TrackControls({
       </div>
   
       <TrackProgressBar
-        track={track}
         trackDuration={trackDuration}
         currentTime={currentTime}
-        rangeInputRef={rangeInputRef}
+        audioRef={audioRef}
+        progressBarRef={progressBarRef}
       />
     </div>
   );

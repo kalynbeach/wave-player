@@ -5,14 +5,14 @@ import { useState, useEffect } from "react";
 import { Progress } from "@/components/ui/progress"
 
 type TrackProgressBar = {
-  track: Track;
   trackDuration: number;
   currentTime: number;
-  rangeInputRef: React.RefObject<HTMLInputElement>;
+  audioRef: React.RefObject<HTMLAudioElement>;
+  progressBarRef: React.RefObject<HTMLInputElement>;
 };
 
-export default function TrackProgressBar({ track, trackDuration, currentTime, rangeInputRef }: TrackProgressBar) {
-  const [progress, setProgress] = useState<number>(0);
+export default function TrackProgressBar({ trackDuration, currentTime, audioRef, progressBarRef }: TrackProgressBar) {
+  // const [progress, setProgress] = useState<number>(0);
 
   function formatTime(time: number): string {
     if (time === 0) return `00:00`;
@@ -24,13 +24,10 @@ export default function TrackProgressBar({ track, trackDuration, currentTime, ra
   }
 
   function onProgressBarChange(event: React.ChangeEvent<HTMLInputElement>) {
-    console.log(`[TrackProgressBar] onProgressBarChange: `, event.target.value);
+    console.log(`[TrackProgressBar] onProgressBarChange: `, parseInt(event.target.value));
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = parseInt(event.target.value);
   }
-
-  // useEffect(() => {
-  //   console.log(`[TrackProgressBar] currentTime: `, currentTime);
-  //   console.log(`[TrackProgressBar] trackDuration: `, trackDuration);
-  // }, [currentTime, trackDuration]);
 
   return (
     <div className="track-progress-bar w-full flex flex-row items-center justify-between">
@@ -41,18 +38,19 @@ export default function TrackProgressBar({ track, trackDuration, currentTime, ra
 
       {/* Progress Bar */}
       <div className="w-full flex flex-row items-center justify-center">
-        {/* <input
+        <input
           type="range"
-          ref={rangeInputRef}
-          defaultValue={0}
+          ref={progressBarRef}
           onChange={onProgressBarChange}
-          className="w-full accent-green-600 dark:accent-green-400"
-        /> */}
-        <Progress
           value={currentTime}
-          max={trackDuration}
-          className="accent-green-600 dark:accent-green-400"
+          max={Math.round(trackDuration)}
+          className="w-full accent-green-600 dark:accent-green-400"
         />
+        {/* <Progress
+          value={progress}
+          max={Math.round(trackDuration)}
+          className="accent-green-600 dark:accent-green-400"
+        /> */}
       </div>
 
       {/* Track Duration */}
