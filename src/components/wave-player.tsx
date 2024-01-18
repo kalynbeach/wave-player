@@ -22,7 +22,7 @@ export default function WavePlayer({ id, playlist }: WavePlayerProps) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const progressBarRef = useRef<HTMLInputElement>(null);
-  
+
   const audioContextRef = useRef<AudioContext | null>(null);
   // const audioSourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   // const audioGainNodeRef = useRef<GainNode | null>(null);
@@ -86,7 +86,7 @@ export default function WavePlayer({ id, playlist }: WavePlayerProps) {
   }
 
   return (
-    <div className="wave-player w-fit md:w-full md:max-w-3xl p-2 flex flex-col gap-2 md:flex-row border rounded-sm">
+    <div className="wave-player w-fit md:w-full md:max-w-3xl p-2 flex flex-col gap-2 md:flex-row border border-neutral-900 rounded-sm">
       <audio
         ref={audioRef}
         src={track.src}
@@ -100,7 +100,8 @@ export default function WavePlayer({ id, playlist }: WavePlayerProps) {
       ></audio>
       <div className="flex">
         <TrackImage
-          image={track.image}
+          // image={track.image}
+          image={undefined}
         />
       </div>
       <div className="w-full flex flex-col gap-2 justify-between">

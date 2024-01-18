@@ -7,10 +7,11 @@ type TrackInfoProps = {
 
 export default function TrackInfo({ track }: TrackInfoProps) {
   return (
-    <div className="track-info h-full flex flex-col justify-between">
-      <span className="text-lg font-bold">{track.title}</span>
-      <span className="font-semibold">{track.artist}</span>
-      <span className="text-sm font-medium">{track.record}</span>
+    <div className="track-info h-full py-2 flex flex-col justify-between gap-1 md:gap-0">
+      {/* TODO: Handle long text overflow */}
+      <span className="text-xl md:text-2xl font-mono font-black">{track.title}</span>
+      <span className="md:text-lg font-medium">{track.artist}</span>
+      <span className="text-sm md:text-base font-mono font-bold">{track.record}</span>
     </div>
   );
 }

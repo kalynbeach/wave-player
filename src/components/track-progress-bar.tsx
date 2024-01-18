@@ -12,7 +12,6 @@ type TrackProgressBar = {
 };
 
 export default function TrackProgressBar({ trackDuration, currentTime, audioRef, progressBarRef }: TrackProgressBar) {
-  // const [progress, setProgress] = useState<number>(0);
 
   function formatTime(time: number): string {
     if (time === 0) return `00:00`;
@@ -30,10 +29,10 @@ export default function TrackProgressBar({ trackDuration, currentTime, audioRef,
   }
 
   return (
-    <div className="track-progress-bar w-full flex flex-row items-center justify-between">
+    <div className="track-progress-bar flex-grow w-full flex flex-row items-center justify-between gap-2">
       {/* Current Time */}
-      <div className="w-[56px] p-2 flex flex-row items-center justify-start">
-        <span className="text-xs">{formatTime(currentTime)}</span>
+      <div className="w-[56px] p-2 flex flex-row items-center justify-center border dark:border-neutral-900 rounded-sm">
+        <span className="text-sm font-mono font-bold tracking-wide">{formatTime(currentTime)}</span>
       </div>
 
       {/* Progress Bar */}
@@ -44,7 +43,7 @@ export default function TrackProgressBar({ trackDuration, currentTime, audioRef,
           onChange={onProgressBarChange}
           value={currentTime}
           max={Math.round(trackDuration)}
-          className="w-full accent-green-600 dark:accent-green-400"
+          className="w-full accent-green-600 dark:accent-green-500"
         />
         {/* <Progress
           value={progress}
@@ -54,8 +53,8 @@ export default function TrackProgressBar({ trackDuration, currentTime, audioRef,
       </div>
 
       {/* Track Duration */}
-      <div className="w-[56px] p-2 flex flex-row items-center justify-end">
-        <span className="text-xs">{formatTime(trackDuration)}</span>
+      <div className="w-[56px] p-2 flex flex-row items-center justify-center border dark:border-neutral-900 rounded-sm">
+        <span className="text-sm font-mono font-bold tracking-wide">{formatTime(trackDuration)}</span>
       </div>
     </div>
   );

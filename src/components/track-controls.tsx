@@ -44,38 +44,34 @@ export default function TrackControls({
 }: TrackControlsProps) {
   return (
     <div className="track-controls w-full flex flex-col md:flex-row gap-2 items-center justify-between">
-  
-      <div className="w-full flex flex-row items-center justify-between md:justify-start md:gap-2">
+      <div className="track-control-buttons w-full md:w-fit flex flex-row items-center justify-between md:gap-2">
         <div className="flex">
           {/* Loop */}
-          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm">
+          <ControlButton label={"loop"} onClick={() => { console.log(`loopin'`); }}>
             <LoopIcon className="w-5 h-5" />
-          </Button>
+          </ControlButton>
         </div>
-
         <div className="flex flex-row gap-2">
           {/* Previous */}
-          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={previous}>
+          <ControlButton label={"previous"} onClick={previous}>
             <TrackPreviousIcon className="w-5 h-5" />
-          </Button>
+          </ControlButton>
           {/* Play/Pause */}
-          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={isPlaying ? pause : play}>
+          <ControlButton label={isPlaying ? "pause" : "play"} onClick={isPlaying ? pause : play}>
             { isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" /> }
-          </Button>
+          </ControlButton>
           {/* Next */}
-          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={next}>
+          <ControlButton label={"next"} onClick={next}>
             <TrackNextIcon className="w-5 h-5" />
-          </Button>
+          </ControlButton>
         </div>
-        
         <div className="flex">
           {/* Volume */}
-          <Button variant="ghost" size="icon" className="w-10 h-10 rounded-sm" onClick={mute}>
-            { isMuted ? <SpeakerOffIcon className="w-5 h-5" /> : <SpeakerLoudIcon className="w-5 h-5" />}
-          </Button>
+          <ControlButton label={"mute"} onClick={mute}>
+           { isMuted ? <SpeakerOffIcon className="w-5 h-5" /> : <SpeakerLoudIcon className="w-5 h-5" />}
+          </ControlButton>
         </div>
       </div>
-  
       <TrackProgressBar
         trackDuration={trackDuration}
         currentTime={currentTime}
@@ -83,5 +79,29 @@ export default function TrackControls({
         progressBarRef={progressBarRef}
       />
     </div>
+  );
+}
+
+type ControlButtonProps = {
+  children: React.ReactNode;
+  onClick: () => void;
+  label: string;
+};
+
+function ControlButton({
+  children,
+  onClick,
+  label
+}: ControlButtonProps) {
+  return (
+    <Button
+      onClick={onClick}
+      className="w-10 h-10 border border-neutral-900 rounded-sm transition dark:hover:bg-neutral-900/30 dark:hover:border-neutral-900/70 dark:hover:text-green-500"
+      variant="ghost"
+      size="icon"
+      data-label={label}
+    >
+      {children}
+    </Button>
   );
 }

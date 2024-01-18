@@ -1,6 +1,7 @@
 import "@/styles/globals.css";
 import type { Metadata } from "next";
 import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import { cn } from "@/lib/utils";
 import ThemeProvider from "@/components/theme-provider";
 
@@ -18,7 +19,8 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className={cn(
         "min-h-screen bg-background font-sans antialiased",
-        GeistSans.variable
+        GeistSans.variable,
+        GeistMono.variable,
       )}>
         <ThemeProvider
           attribute="class"

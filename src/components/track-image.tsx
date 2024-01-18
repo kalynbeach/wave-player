@@ -7,7 +7,7 @@ type TrackImageProps = {
 
 export default function TrackImage({ image }: TrackImageProps) {
   return (
-    <div className="track-image flex border">
+    <div className="track-image w-64 h-64 md:w-40 md:h-40 flex items-center justify-center bg-neutral-900/30 border border-neutral-900 rounded-sm">
       { image ? (
         <Image
           src={image.src}
@@ -17,9 +17,10 @@ export default function TrackImage({ image }: TrackImageProps) {
           priority
         />
       ) : (
-        <div className="w-64 h-64 md:w-32 md:h-32 flex items-center justify-center bg-neutral-100">
-          <span>🎵</span>
-        </div>
+        <>🌐</>
+        // <div className="w-64 h-64 md:w-40 md:h-40 flex items-center justify-center bg-neutral-300 border rounded-sm">
+        //   <span>🎵</span>
+        // </div>
       ) }
     </div>
   );
