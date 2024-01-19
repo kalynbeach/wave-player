@@ -86,7 +86,7 @@ export default function WavePlayer({ id, playlist }: WavePlayerProps) {
   }
 
   return (
-    <div className="wave-player w-fit md:w-full md:max-w-3xl p-2 flex flex-col gap-2 md:flex-row border border-neutral-900 rounded-sm">
+    <div className="wave-player w-fit md:w-full md:max-w-3xl p-2 flex flex-col gap-2 md:flex-row border border-neutral-900 rounded-sm" data-testid="wave-player">
       <audio
         ref={audioRef}
         src={track.src}
