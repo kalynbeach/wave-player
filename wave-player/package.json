@@ -1,0 +1,11 @@
+{
+  "name": "@kalynbeach/wave-player",
+  "version": "1.2.0",
+  "description": "A web audio player.",
+  "author": "Kalyn Beach",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kalynbeach/wave-player.git"
+  },
+  "type": "module"
+}

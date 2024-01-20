@@ -1,4 +1,5 @@
-import WavePlayer from "@/components/wave-player";
+// import WavePlayer from "@/components/wave-player";
+import WavePlayer from "@kalynbeach/wave-player";
 import ThemeToggle from "@/components/theme-toggle";
 import { tracks } from "@/lib/placeholder-data";
 
