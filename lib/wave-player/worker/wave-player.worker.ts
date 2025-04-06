@@ -16,6 +16,35 @@ let ringBufferSab: SharedArrayBuffer | null = null;
 let stateBufferSab: SharedArrayBuffer | null = null;
 
 /**
+ * Handles the INITIALIZE command.
+ * Stores necessary shared buffers and confirms initialization.
+ * @param command The initialize command data.
+ */
+function handleInitialize(command: InitializeCommand): void {
+  if (isInitialized) {
+    console.warn("[WavePlayer Worker] Worker already initialized.");
+    return;
+  }
+  console.log("[WavePlayer Worker] Initializing with SABs...");
+  ringBufferSab = command.ringBufferSab;
+  stateBufferSab = command.stateBufferSab;
+
+  // TODO: Perform any other necessary one-time setup using provided options
+
+  isInitialized = true;
+  console.log("[WavePlayer Worker] Initialization complete.");
+  postWorkerMessage({ type: "INITIALIZED" });
+}
+
+/**
+ * Posts a message back to the main thread (WavePlayerProvider).
+ * @param message The message object to send.
+ */
+function postWorkerMessage(message: WorkerMessage): void {
+  self.postMessage(message);
+}
+
+/**
  * Handles incoming commands from the main thread (WavePlayerProvider).
  */
 self.onmessage = (event: MessageEvent<ProviderCommand>) => {
@@ -75,35 +104,6 @@ self.onmessage = (event: MessageEvent<ProviderCommand>) => {
       break;
   }
 };
-
-/**
- * Handles the INITIALIZE command.
- * Stores necessary shared buffers and confirms initialization.
- * @param command The initialize command data.
- */
-function handleInitialize(command: InitializeCommand): void {
-  if (isInitialized) {
-    console.warn("[WavePlayer Worker] Worker already initialized.");
-    return;
-  }
-  console.log("[WavePlayer Worker] Initializing with SABs...");
-  ringBufferSab = command.ringBufferSab;
-  stateBufferSab = command.stateBufferSab;
-
-  // TODO: Perform any other necessary one-time setup using provided options
-
-  isInitialized = true;
-  console.log("[WavePlayer Worker] Initialization complete.");
-  postWorkerMessage({ type: "INITIALIZED" });
-}
-
-/**
- * Posts a message back to the main thread (WavePlayerProvider).
- * @param message The message object to send.
- */
-function postWorkerMessage(message: WorkerMessage): void {
-  self.postMessage(message);
-}
 
 // Basic error handling for the worker scope itself
 self.onerror = (eventOrMessage: Event | string) => {
