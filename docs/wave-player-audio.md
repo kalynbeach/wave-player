@@ -115,7 +115,7 @@ wave-player/
 
 This plan progresses from setting up the basic structure to implementing core functionality and finally adding advanced features and refinements.
 
-### Phase 1: Foundational Scaffolding & Communication Setup
+### Phase 1: Foundational Scaffolding & Communication Setup [Completed]
 
 1. **Define Message Interfaces:**
     * Create `lib/wave-player/types/worker-messages.d.ts`.
