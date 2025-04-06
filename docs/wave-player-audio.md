@@ -155,17 +155,20 @@ This plan progresses from setting up the basic structure to implementing core fu
     * Send `LOADING_PROGRESS` messages back to the Provider.
     * Send a `TRACK_READY` message when enough data is decoded to potentially start playback (or upon full decode initially).
 
-### Phase 3: Connecting Worker and Worklet - Data Transfer
+### Phase 3: Connecting Worker and Worklet - Data Transfer [Completed - Assumes Stereo]
+
+**Note:** For initial implementation simplicity and performance, the connection currently assumes stereo (2-channel) audio. The worker will throw an error if a non-stereo track is loaded.
 
 8. **Shared Ring Buffer:**
-    * Implement `lib/wave-player/worker/ring-buffer.ts` (or use a reliable library). This should use `SharedArrayBuffer` and `Atomics` for thread-safe read/write operations between the worker and worklet. It needs methods for writing samples (likely non-interleaved Float32Array channels) and reading them.
+    * Implement `lib/wave-player/worker/ring-buffer.ts` (or use a reliable library). This should use `SharedArrayBuffer` and `Atomics` for thread-safe read/write operations between the worker and worklet. It needs methods for writing samples (likely non-interleaved Float32Array channels) and reading them. **[Done]**
 9. **Worker Integration (Write):**
-    * In `wave-player.worker.ts` (or `audio-decoder.ts`), modify the decoder output handler to extract raw sample data from `AudioData` objects and write it into the shared ring buffer. Handle buffer full scenarios (e.g., pause decoding).
+    * In `wave-player.worker.ts` (or `audio-decoder.ts`), modify the decoder output handler to extract raw sample data from `AudioData` objects (validating format 'f32-planar' and 2 channels) and write it into the shared ring buffer. Handle buffer full scenarios (e.g., pause decoding). **[Done]**
 10. **Worklet Integration (Read):**
     * In `wave-player.processor.ts`, modify the `process` method:
+        * Accept SABs and channel count (hardcoded to 2) via `processorOptions` in the constructor and initialize the `RingBuffer` instance.
         * Read available samples from the shared ring buffer for each channel.
         * Copy the read samples into the corresponding output channel buffers provided by the `process` method.
-        * Handle buffer empty scenarios (output silence).
+        * Handle buffer empty scenarios (output silence). **[Done]**
 
 ### Phase 4: Basic Playback Control
 

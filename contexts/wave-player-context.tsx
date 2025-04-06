@@ -272,12 +272,19 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         // 5. Create AudioWorkletNode
         const workletNode = new AudioWorkletNode(
           context,
-          "wave-player-processor"
+          "wave-player-processor",
           // We could pass SABs via processorOptions if needed, but worker init is preferred
           // processorOptions: {
           //   ringBufferSab: ringBufferSabRef.current,
           //   stateBufferSab: stateBufferSabRef.current
           // }
+          {
+              processorOptions: {
+                  ringBufferDataSab: ringBufferSabRef.current, // Pass Data SAB
+                  stateBufferSab: stateBufferSabRef.current,    // Pass State SAB
+                  numChannels: 2 // Assume Stereo for initial setup
+              }
+          }
         );
         workletNode.connect(gainNode);
         workletNodeRef.current = workletNode;
