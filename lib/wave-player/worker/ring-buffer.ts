@@ -2,9 +2,10 @@
  * Constants for indices within the state SharedArrayBuffer.
  * We use Int32Array for Atomics compatibility.
  */
-const READ_POINTER_INDEX = 0;
-const WRITE_POINTER_INDEX = 1;
-const STATE_ARRAY_LENGTH = 2; // Ensure the SAB is large enough
+export const READ_POINTER_INDEX = 0;
+export const WRITE_POINTER_INDEX = 1;
+export const PLAYBACK_STATE_INDEX = 2; // 0 = paused/stopped, 1 = playing
+export const STATE_ARRAY_LENGTH = 3; // Read pointer, write pointer, playback state
 
 /**
  * A thread-safe, lock-free ring buffer implementation using SharedArrayBuffers
@@ -13,7 +14,7 @@ const STATE_ARRAY_LENGTH = 2; // Ensure the SAB is large enough
  * Assumes non-interleaved Float32 audio data.
  */
 export class RingBuffer {
-  private readonly state: Int32Array; // Read/Write pointers
+  private readonly state: Int32Array; // Read/Write pointers, Playback state
   private readonly channels: Float32Array[]; // Audio data storage for each channel
   private readonly capacity: number; // Capacity per channel in samples
   private readonly numChannels: number;

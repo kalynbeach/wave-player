@@ -1,6 +1,9 @@
 /// <reference types="@types/audioworklet" />
 
-import { RingBuffer } from "../worker/ring-buffer";
+import {
+  RingBuffer,
+  PLAYBACK_STATE_INDEX,
+} from "../worker/ring-buffer";
 
 // Define processor options structure
 interface WavePlayerProcessorOptions extends AudioWorkletNodeOptions {
@@ -21,7 +24,8 @@ interface WavePlayerProcessorOptions extends AudioWorkletNodeOptions {
  */
 class WavePlayerProcessor extends AudioWorkletProcessor {
   private ringBuffer: RingBuffer | null = null;
-  private numChannels = 0; // Store number of channels
+  private numChannels = 0; // Default value to satisfy TS
+  private stateBufferView: Int32Array | null = null; // View for atomic state reads
 
   // Temporary buffer to hold data read from ring buffer before copying to output
   // Helps manage reading fewer samples than the output buffer size
@@ -46,6 +50,9 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
       this.port.postMessage({ type: "ERROR", message: "Processor initialization failed: Missing SABs or channels." });
       return; // Exit constructor
     }
+
+    // Store state buffer view
+    this.stateBufferView = new Int32Array(processorOptions.stateBufferSab);
 
     try {
       this.numChannels = processorOptions.numChannels;
@@ -97,10 +104,27 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
     _parameters: Record<string, Float32Array>
   ): boolean {
     if (!this.ringBuffer) {
-      // console.warn("[WavePlayer Processor] RingBuffer not available, outputting silence.");
+      // console.trace("[WavePlayer Processor] RingBuffer not available, outputting silence.");
       this.outputSilence(outputs);
       return true; // Keep processor alive
     }
+
+    // Check playback state using Atomics
+    if (!this.stateBufferView) {
+      console.warn("[WavePlayer Processor] State buffer view not available, outputting silence.");
+      this.outputSilence(outputs); // Output silence if state cannot be read
+      return true;
+    }
+
+    const isPlaying = Atomics.load(this.stateBufferView, PLAYBACK_STATE_INDEX) === 1;
+
+    if (!isPlaying) {
+      // console.trace("[WavePlayer Processor] Paused, outputting silence.");
+      this.outputSilence(outputs);
+      return true; // Keep processor alive while paused
+    }
+
+    // --- Only proceed if playing --- 
 
     const output = outputs[0]; // Primary output node
     const numOutputChannels = output.length;
@@ -143,6 +167,7 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
     } else {
       // Not enough data available in the RingBuffer, output silence
       this.outputSilence(outputs);
+      // console.trace(`[WavePlayer Processor] RingBuffer starved (Available: ${this.ringBuffer.availableRead}). Outputting silence.`);
     }
 
     // TODO (Phase 4): Check playback state (via Atomics/message) - if paused, output silence regardless of buffer content
@@ -152,14 +177,14 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
 
   /** Helper function to fill output buffers with silence */
   private outputSilence(outputs: Float32Array[][]): void {
-      const output = outputs[0];
-      if (!output) return;
+    const output = outputs[0];
+    if (!output) return;
 
-      output.forEach((channel) => {
-          if (channel instanceof Float32Array && typeof channel.fill === "function") {
-              channel.fill(0);
-          }
-      });
+    output.forEach((channel) => {
+      if (channel instanceof Float32Array && typeof channel.fill === "function") {
+        channel.fill(0);
+      }
+    });
   }
 
 }

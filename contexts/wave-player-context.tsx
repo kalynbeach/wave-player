@@ -15,6 +15,10 @@ import type {
   WorkerMessage,
   WavePlayerStatus,
 } from "@/lib/wave-player/types/worker-messages";
+import {
+  PLAYBACK_STATE_INDEX,
+  STATE_ARRAY_LENGTH,
+} from "@/lib/wave-player/worker/ring-buffer";
 
 // === Constants ===
 // Arbitrary sizes for the SharedArrayBuffers. Adjust as needed.
@@ -231,7 +235,13 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
       try {
         // 1. Create SharedArrayBuffers
         ringBufferSabRef.current = new SharedArrayBuffer(RING_BUFFER_SIZE_BYTES);
-        stateBufferSabRef.current = new SharedArrayBuffer(STATE_BUFFER_SIZE_BYTES);
+        stateBufferSabRef.current = new SharedArrayBuffer(STATE_ARRAY_LENGTH * Int32Array.BYTES_PER_ELEMENT); // Use constant
+        // Initialize playback state to paused (0)
+        if (stateBufferSabRef.current) {
+          const stateView = new Int32Array(stateBufferSabRef.current);
+          Atomics.store(stateView, PLAYBACK_STATE_INDEX, 0);
+          console.log("[WavePlayerProvider] Initialized playback state in SAB to paused.");
+        }
         console.log("[WavePlayerProvider] Created SharedArrayBuffers.");
 
         // 2. Create AudioContext and GainNode

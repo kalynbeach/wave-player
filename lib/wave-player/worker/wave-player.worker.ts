@@ -11,7 +11,10 @@ import type {
 import type { WavePlayerTrack } from "../types/wave-player";
 import { AudioFetcher } from "./audio-fetcher";
 import { AudioDecoderWrapper, type AudioDecoderConfig } from "./audio-decoder";
-import { RingBuffer } from "./ring-buffer";
+import {
+  RingBuffer,
+  PLAYBACK_STATE_INDEX,
+} from "./ring-buffer";
 
 console.log("[WavePlayer Worker] Initializing worker...");
 
@@ -19,6 +22,7 @@ console.log("[WavePlayer Worker] Initializing worker...");
 let isInitialized = false;
 let ringBufferDataSab: SharedArrayBuffer | null = null;
 let stateBufferSab: SharedArrayBuffer | null = null;
+let stateBufferView: Int32Array | null = null;
 let ringBuffer: RingBuffer | null = null;
 let currentTrack: WavePlayerTrack | null = null;
 let currentTrackId: string | null = null;
@@ -113,6 +117,17 @@ function handleInitialize(command: InitializeCommand): void {
   stateBufferSab = command.stateBufferSab;
 
   isInitialized = true;
+  // Create Int32Array view for state buffer AFTER it's assigned
+  if (stateBufferSab) {
+      stateBufferView = new Int32Array(stateBufferSab);
+      // Ensure initial state is paused (might be redundant if provider does it, but safe)
+      Atomics.store(stateBufferView, PLAYBACK_STATE_INDEX, 0);
+  } else {
+      console.error("[WavePlayer Worker] State SAB is null after assignment in handleInitialize!");
+      postWorkerMessage({ type: "ERROR", message: "Initialization failed: Internal state buffer error." });
+      return;
+  }
+
   updateStatus("idle");
   console.log("[WavePlayer Worker] Initialization complete, SABs stored.");
   postWorkerMessage({ type: "INITIALIZED" });
@@ -475,13 +490,29 @@ self.onmessage = (event: MessageEvent<ProviderCommand>) => {
       break;
 
     case "PLAY":
-      console.warn(`[WavePlayer Worker] Received ${command.type}, but handler not implemented yet.`);
-      // TODO: Implement PLAY handler (Phase 4)
+      if (stateBufferView && (currentStatus === "ready" || currentStatus === "paused")) {
+        console.log("[WavePlayer Worker] Handling PLAY command.");
+        Atomics.store(stateBufferView, PLAYBACK_STATE_INDEX, 1); // 1 = playing
+        updateStatus("playing");
+      } else if (!stateBufferView) {
+          console.error("[WavePlayer Worker] Cannot PLAY: State buffer view not available.");
+          postWorkerMessage({ type: "ERROR", message: "Internal error: Playback state cannot be controlled.", trackId: currentTrackId ?? undefined });
+      } else {
+          console.warn(`[WavePlayer Worker] Cannot PLAY in current status: ${currentStatus}`);
+      }
       break;
 
     case "PAUSE":
-      console.warn(`[WavePlayer Worker] Received ${command.type}, but handler not implemented yet.`);
-      // TODO: Implement PAUSE handler (Phase 4)
+      if (stateBufferView && currentStatus === "playing") {
+        console.log("[WavePlayer Worker] Handling PAUSE command.");
+        Atomics.store(stateBufferView, PLAYBACK_STATE_INDEX, 0); // 0 = paused
+        updateStatus("paused");
+      } else if (!stateBufferView) {
+          console.error("[WavePlayer Worker] Cannot PAUSE: State buffer view not available.");
+           postWorkerMessage({ type: "ERROR", message: "Internal error: Playback state cannot be controlled.", trackId: currentTrackId ?? undefined });
+      } else {
+          console.warn(`[WavePlayer Worker] Cannot PAUSE in current status: ${currentStatus}`);
+      }
       break;
 
     case "SEEK":
@@ -544,6 +575,7 @@ self.onerror = (eventOrMessage: Event | string) => {
         type: "ERROR",
         message: message,
         error: error,
+        trackId: currentTrackId ?? undefined,
       });
       updateStatus("error");
       cleanupCurrentTrack();

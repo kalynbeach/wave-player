@@ -170,18 +170,17 @@ This plan progresses from setting up the basic structure to implementing core fu
         * Copy the read samples into the corresponding output channel buffers provided by the `process` method.
         * Handle buffer empty scenarios (output silence). **[Done]**
 
-### Phase 4: Basic Playback Control
+### Phase 4: Basic Playback Control [Completed]
 
 11. **Implement Play/Pause:**
-    * Add state within the worker to track playback status (`idle`, `playing`, `paused`).
-    * Implement handlers for `PLAY` and `PAUSE` commands.
-    * Use `Atomics` or the worklet's message port to signal the `WavePlayerProcessor` whether it should be actively reading from the ring buffer and outputting audio (`playing`) or outputting silence (`paused`).
-    * Send `STATUS_UPDATE` messages (`playing`, `paused`) back to the Provider.
-12. **Update Provider:**
-    * Update the context reducer and state to handle `playing` and `paused` statuses.
-    * Connect UI controls to dispatch `PLAY`/`PAUSE` commands via `controls.play()`/`controls.pause()`.
+    * Defined shared state index (`PLAYBACK_STATE_INDEX`) in `stateBufferSab` for playback state. **[Done]**
+    * Implemented `PLAY`/`PAUSE` handlers in the worker (`wave-player.worker.ts`) using `Atomics.store` to update the shared state. **[Done]**
+    * Modified the worklet (`wave-player.processor.ts`) `process` method to check the shared state using `Atomics.load` and output silence if paused. **[Done]**
+    * Updated the provider (`wave-player-context.tsx`) to initialize the shared state flag to paused. **[Done]**
+    * Updated the provider reducer to handle `playing` and `paused` statuses sent via `STATUS_UPDATE` messages from the worker. **[Done]**
+    * Connected UI controls (via `controls.play()`/`controls.pause()` in context) to dispatch `PLAY`/`PAUSE` commands to the worker. **[Done]**
 
-### Phase 5: Time Synchronization and Track End
+### Phase 5: Time Synchronization and Track End [In Progress]
 
 13. **Track Playback Time:**
     * Implement logic (likely starting in the worklet and refined in the worker) to accurately track the number of samples processed/played.
