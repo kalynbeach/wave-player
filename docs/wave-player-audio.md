@@ -137,7 +137,7 @@ This plan progresses from setting up the basic structure to implementing core fu
         * Establish basic `postMessage` communication: send the `INITIALIZE` command to the worker on setup and handle the `INITIALIZED` response.
         * Update the reducer and state to handle basic status like `"initializing"`, `"idle"`.
 
-### Phase 2: Core Audio Data Flow - Fetching & Decoding
+### Phase 2: Core Audio Data Flow - Fetching & Decoding [Completed]
 
 5. **Chunked Fetching:**
     * Implement `lib/wave-player/worker/audio-fetcher.ts`.
