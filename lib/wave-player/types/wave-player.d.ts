@@ -1,3 +1,5 @@
+// NOTE: These types and interfaces are NOT final and are subject to change
+
 export type WavePlayerImage = {
   src: string;
   alt: string;
@@ -53,16 +55,26 @@ export interface WavePlayerControls {
 /**
  * WavePlayerAudioEngine
  */
-export interface IWavePlayerAudioEngine {}
+export interface IWavePlayerAudioEngine {
+  decoder: AudioDecoder;
+  fetchAudioChunk: (src: string) => Promise<EncodedAudioChunk>;
+  decodeAudioChunk: (chunk: EncodedAudioChunk) => Promise<AudioData>;
+}
 
-export interface WavePlayerBufferPool {}
+export interface WavePlayerBufferPool {
+  data: Map<string, AudioData>;
+}
 
-export interface WavePlayerBufferManagerOptions {}
+export interface WavePlayerBufferManagerOptions {
+  chunkSize: number;
+  poolSize: number;
+}
 
 /**
  * WavePlayerBufferManager
  */
 export interface IWavePlayerBufferManager {
+  options: WavePlayerBufferManagerOptions;
   pool: WavePlayerBufferPool;
   controller: AbortController | null;
 }
