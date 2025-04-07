@@ -1,16 +1,18 @@
+import { useWavePlayer } from "@/hooks/use-wave-player";
 import {
   CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 
-type WavePlayerTrackInfoProps = {
-  title: string;
-  record: string;
-  artist: string;
-};
+export function WavePlayerTrackInfo() {
+  const { state } = useWavePlayer();
+  const { currentTrack } = state;
 
-export function WavePlayerTrackInfo({ title, record, artist }: WavePlayerTrackInfoProps) {
+  const title = currentTrack?.title ?? "--";
+  const record = currentTrack?.record ?? "--";
+  const artist = currentTrack?.artist ?? "--";
+
   return (
     <CardHeader className="wave-player-track-info font-mono bg-accent/50 border rounded-t-sm p-2 gap-1">
       <CardTitle>

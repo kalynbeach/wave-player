@@ -1,6 +1,7 @@
 import ThemeToggle from "@/components/theme/theme-toggle";
 import { WavePlayer } from "@/components/wave-player";
 import { PLACEHOLDER_TRACKS } from "@/data/tracks";
+import { WavePlayerProvider } from "@/contexts/wave-player-context";
 
 export default function Home() {
   return (
@@ -9,7 +10,9 @@ export default function Home() {
         <h1 className="text-xl font-mono font-bold">wave-player</h1>
       </header>
       <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <WavePlayer tracks={PLACEHOLDER_TRACKS} />
+        <WavePlayerProvider>
+          <WavePlayer tracks={PLACEHOLDER_TRACKS} />
+        </WavePlayerProvider>
         {/* NOTE: track list placeholder */}
         <div className="flex flex-col gap-2 p-3 bg-muted/70 rounded-sm border font-mono">
           <p className="font-semibold">Tracks</p>
