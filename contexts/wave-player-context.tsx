@@ -23,6 +23,7 @@ import {
 // === Constants ===
 // Arbitrary sizes for the SharedArrayBuffers. Adjust as needed.
 const RING_BUFFER_SIZE_BYTES = 1024 * 1024; // 1 MB for audio samples
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const STATE_BUFFER_SIZE_BYTES = 16; // Small buffer for atomic state flags (e.g., playing)
 
 // === State ===
