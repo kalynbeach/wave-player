@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ESNext", "WebWorker", "DOM"],
+    "target": "ES2017",
+    "module": "ESNext",
+    "moduleResolution": "nodenext",
+    "esModuleInterop": true,
+    "strict": true,
+    "noEmit": false,
+    "outDir": "./public/worklets",
+  },
+  "include": [
+    "lib/wave-player/worklet/**/*.ts",
+  ],
+  "exclude": ["node_modules"]
+}

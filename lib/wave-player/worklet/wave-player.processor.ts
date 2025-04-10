@@ -201,3 +201,10 @@ try {
   // Throwing might be appropriate to signal a critical failure.
   throw error;
 }
+
+// TODO: should export like this?
+export {
+  RingBuffer,
+  PLAYBACK_STATE_INDEX,
+  WavePlayerProcessor,
+};

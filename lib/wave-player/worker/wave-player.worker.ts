@@ -178,8 +178,9 @@ function guessDecoderConfig(url: string): AudioDecoderConfig | null {
      console.warn("[WavePlayer Worker] WAV/PCM support via WebCodecs might be limited or require specific codec strings.");
      // Placeholder - This might fail, WAV often doesn't need a decoder in the same way
      return {
-        codec: "pcm-f32le", // Example, may vary based on actual WAV format
-        sampleRate: 44100,
+        // codec: "pcm-f32le", // Example, may vary based on actual WAV format
+        codec: "pcm-float",
+        sampleRate: 48000,
         numberOfChannels: 2,
      };
    }
@@ -294,7 +295,14 @@ async function handleFetchComplete(): Promise<void> {
     if (audioDecoder) {
         try {
             await audioDecoder.flush();
+
             console.log("[WavePlayer Worker] Decoder flushed after fetch complete.");
+            console.log("[WavePlayer Worker] currentStatus: ", currentStatus);
+            console.log("[WavePlayer Worker] currentTrackId: ", currentTrackId);
+            console.log("[WavePlayer Worker] totalDecodedDuration: ", totalDecodedDuration);
+            console.log("[WavePlayer Worker] expectedChannels: ", expectedChannels);
+            console.log("[WavePlayer Worker] expectedSampleRate: ", expectedSampleRate);
+
             if (!reportedTrackReady && currentTrackId && totalDecodedDuration > 0 && expectedChannels > 0 && expectedSampleRate > 0) {
                 postWorkerMessage({
                   type: "TRACK_READY",

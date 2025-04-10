@@ -257,7 +257,9 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         console.log("[WavePlayerProvider] AudioContext and GainNode created.");
 
         // 3. Create Worker instance and setup message/error handlers
-        const workerUrl = new URL("../lib/wave-player/worker/wave-player.worker.ts", import.meta.url);
+        // const workerUrl = new URL("../lib/wave-player/worker/wave-player.worker.ts", import.meta.url);
+        const workerUrl = new URL("../public/workers/wave-player.worker.js", import.meta.url);
+        console.log("[WavePlayerProvider] Worker URL:", workerUrl.toString());
         worker = new Worker(workerUrl, { type: "module" });
         workerRef.current = worker; // Store reference immediately
         worker.onmessage = handleWorkerMessage;
@@ -270,9 +272,18 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         console.log("[WavePlayerProvider] Worker created.");
 
         // 4. Add AudioWorklet module (critical step)
-        const workletUrl = new URL("../lib/wave-player/worklet/wave-player.processor.ts", import.meta.url);
+        // const workletUrl = new URL("../lib/wave-player/worklet/wave-player.processor.ts", import.meta.url);
+        const workletUrl = new URL("../public/worklets/wave-player.processor.js", import.meta.url);
+        console.log("[WavePlayerProvider] Worklet URL:", workletUrl.toString());
+        // --- MODIFICATION START ---
+        // Construct path relative to public assuming Next.js output structure
+        // NOTE: The exact path might need adjustment after checking the build output's static/media folder.
+        // const workletUrl = "/_next/static/chunks/lib_wave-player_worklet_wave-player_processor_ts.js"; // Example path - VERIFY THIS
+        // console.log("[WavePlayerProvider] Worklet path (relative):", workletUrl);
+        // --- MODIFICATION END ---
         try {
-          await context.audioWorklet.addModule(workletUrl.toString());
+          // await context.audioWorklet.addModule(workletUrl.toString()); // Original line
+          await context.audioWorklet.addModule(workletUrl); // Use relative path directly
           console.log("[WavePlayerProvider] AudioWorklet module added successfully.");
         } catch (addModuleError) {
           console.error("[WavePlayerProvider] Failed to add AudioWorklet module:", addModuleError);
@@ -343,12 +354,9 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         // Send terminate message before closing to allow worker cleanup
         const terminateCommand: ProviderCommand = { type: "TERMINATE" };
         workerRef.current.postMessage(terminateCommand);
-        // Allow a brief moment for worker cleanup before terminating forcefully
-        setTimeout(() => {
-          workerRef.current?.terminate();
-          workerRef.current = null;
-          console.log("[WavePlayerProvider] Worker terminated.");
-        }, 50); // Adjust timeout as needed
+        workerRef.current?.terminate();
+        workerRef.current = null;
+        console.log("[WavePlayerProvider] Worker terminated.");
       }
       // Disconnect and clean up Audio Nodes
       if (workletNodeRef.current) {
@@ -395,25 +403,30 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
     (command: ProviderCommand) => {
       if (!workerRef.current) {
         console.error(
-          "[WavePlayerProvider] Cannot send command, worker not available."
+          "[WavePlayerProvider] Cannot send command, worker ref not available." // Slightly updated message
         );
         dispatch({
           type: "SET_ERROR",
-          payload: "Audio worker is not available.",
+          payload: "Audio worker is not available (ref missing).",
         });
         return;
       }
-      if (state.status === "initializing") {
+
+      // Allow INITIALIZE and TERMINATE commands even during "initializing" state.
+      // Block other commands if the status is initializing.
+      const allowedDuringInit = command.type === "INITIALIZE" || command.type === "TERMINATE";
+      if (!allowedDuringInit && state.status === "initializing") {
         console.warn(
-          "[WavePlayerProvider] Cannot send command while initializing."
+          `[WavePlayerProvider] Blocked command (${command.type}) while status is initializing.`
         );
-        // Maybe queue commands later? For now, just block.
+        // Optional: Implement a command queue here if needed later.
         return;
       }
+
       console.log("[WavePlayerProvider] Posting command:", command.type, command);
       workerRef.current.postMessage(command);
     },
-    [state.status]
+    [state.status] // Dependency is correct
   );
 
   const load = useCallback(

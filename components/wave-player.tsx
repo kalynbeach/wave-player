@@ -26,13 +26,26 @@ export function WavePlayer({ tracks, initialTrackIndex = 0 }: WavePlayerProps) {
       if (validIndex !== currentTrackIndex) {
         setCurrentTrackIndex(validIndex);
       } else {
-        if (state.currentTrack?.id !== tracks[validIndex].id || state.status === "idle" || state.status === "initializing") {
-          console.log(`[WavePlayer] Loading track index: ${validIndex}`);
+        const isProviderInitialized = state.status !== "initializing";
+        const isDifferentTrack = state.currentTrack?.id !== tracks[validIndex].id;
+        // const needsLoad = isProviderInitialized && (isDifferentTrack || state.status === "idle" || state.status === "ended" || state.status === "error");
+        const needsLoad = isProviderInitialized && (isDifferentTrack || state.status === "idle" || state.status === "ended");
+        console.log("[WavePlayer] isProviderInitialized:", isProviderInitialized);
+        console.log("[WavePlayer] isDifferentTrack:", isDifferentTrack);
+        console.log("[WavePlayer] needsLoad:", needsLoad);
+
+        if (needsLoad) {
+          console.log(`[WavePlayer] Loading track index: ${validIndex} (Provider Status: ${state.status})`);
           load(tracks[validIndex]);
+        } else if (!isProviderInitialized) {
+          console.log(`[WavePlayer] Skipping load for index ${validIndex}: Provider is still initializing.`);
+        } else {
+          // Optional debug log for other skipped cases
+          // console.log(`[WavePlayer] Skipping load for index ${validIndex}. Status: ${state.status}, Track ID Match: ${state.currentTrack?.id === tracks[validIndex].id}`);
         }
       }
     }
-  }, [tracks, currentTrackIndex, load, state.status]);
+  }, [tracks, currentTrackIndex, load, state.status, state.currentTrack?.id]);
 
   const handleNextTrack = () => {
     setCurrentTrackIndex((prevIndex) => (prevIndex + 1) % tracks.length);
