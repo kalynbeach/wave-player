@@ -30,14 +30,20 @@ export class AudioFetcher {
   /**
    * Initiates the audio fetch process.
    * @param url The URL of the audio file to fetch.
+   * @param fetchOptions Optional Fetch API RequestInit options (e.g., for headers).
    */
-  async fetchAudio(url: string): Promise<void> {
+  async fetchAudio(url: string, fetchOptions?: RequestInit): Promise<void> {
     this.downloadedBytes = 0;
     this.totalBytes = null;
 
     console.log(`[AudioFetcher] Starting fetch for: ${url}`);
     try {
-      const response = await fetch(url, { signal: this.abortController.signal });
+      // Merge provided options with the internal signal
+      const options: RequestInit = {
+        ...fetchOptions, // Spread incoming options first
+        signal: this.abortController.signal, // Ensure our signal takes precedence or is added
+      };
+      const response = await fetch(url, options);
 
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);

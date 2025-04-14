@@ -10,12 +10,16 @@ class AudioFetcher {
     this.callbacks = callbacks;
     this.abortController = new AbortController;
   }
-  async fetchAudio(url) {
+  async fetchAudio(url, fetchOptions) {
     this.downloadedBytes = 0;
     this.totalBytes = null;
     console.log(`[AudioFetcher] Starting fetch for: ${url}`);
     try {
-      const response = await fetch(url, { signal: this.abortController.signal });
+      const options = {
+        ...fetchOptions,
+        signal: this.abortController.signal
+      };
+      const response = await fetch(url, options);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status} ${response.statusText}`);
       }
@@ -301,43 +305,7 @@ var totalDecodedDuration = 0;
 var reportedTrackReady = false;
 var expectedChannels = 0;
 var expectedSampleRate = 0;
-function postWorkerMessage(message) {
-  self.postMessage(message);
-}
-function updateStatus(status) {
-  if (status === currentStatus)
-    return;
-  console.log(`[WavePlayer Worker] Status changing: ${currentStatus} -> ${status}`);
-  currentStatus = status;
-  postWorkerMessage({
-    type: "STATUS_UPDATE",
-    status: currentStatus,
-    trackId: currentTrackId ?? undefined
-  });
-}
-function cleanupCurrentTrack() {
-  console.log("[WavePlayer Worker] Cleaning up current track resources...");
-  if (abortController) {
-    abortController.abort();
-    abortController = null;
-  }
-  if (audioDecoder) {
-    audioDecoder.close();
-    audioDecoder = null;
-  }
-  audioFetcher = null;
-  currentTrack = null;
-  currentTrackId = null;
-  totalDecodedDuration = 0;
-  reportedTrackReady = false;
-  expectedChannels = 0;
-  expectedSampleRate = 0;
-  if (ringBuffer) {
-    ringBuffer.clear();
-    ringBuffer = null;
-    console.log("[WavePlayer Worker] RingBuffer cleared and reset.");
-  }
-}
+var currentWavHeaderInfo = null;
 function handleInitialize(command) {
   if (isInitialized) {
     console.warn("[WavePlayer Worker] Worker already initialized.");
@@ -414,47 +382,372 @@ async function handleLoad(command) {
     });
     return;
   }
-  console.log(`[WavePlayer Worker] Handling LOAD command for: ${command.track.title}`);
+  if (command.track.src.toLowerCase().endsWith(".wav")) {
+    console.log("[WavePlayer Worker] Handling LOAD for WAV format track:", command.track.src);
+    await handleLoadWav(command);
+  } else {
+    console.log(`[WavePlayer Worker] Handling LOAD command for non-WAV format: ${command.track.title}`);
+    cleanupCurrentTrack();
+    updateStatus("stopped");
+    currentTrack = command.track;
+    currentTrackId = command.track.id;
+    updateStatus("loading");
+    abortController = new AbortController;
+    const guessedConfig = guessDecoderConfig(currentTrack.src);
+    if (!guessedConfig) {
+      postWorkerMessage({
+        type: "ERROR",
+        message: `Could not determine decoder configuration for ${currentTrack.src}`,
+        trackId: currentTrackId
+      });
+      updateStatus("error");
+      cleanupCurrentTrack();
+      return;
+    }
+    try {
+      audioDecoder = new AudioDecoderWrapper({
+        onDecoded: handleDecodedChunk,
+        onError: handleDecodeError
+      });
+      await audioDecoder.configure(guessedConfig);
+      audioFetcher = new AudioFetcher({
+        onChunk: handleFetchedChunk,
+        onComplete: handleFetchComplete,
+        onError: handleFetchError,
+        onProgress: handleFetchProgress
+      });
+      audioFetcher.fetchAudio(currentTrack.src);
+    } catch (configError) {
+      console.error("[WavePlayer Worker] Failed to configure decoder during LOAD:", configError);
+      postWorkerMessage({
+        type: "ERROR",
+        message: `Audio decoder setup failed: ${configError instanceof Error ? configError.message : String(configError)}`,
+        trackId: currentTrackId,
+        error: configError instanceof Error ? configError : new Error(String(configError))
+      });
+      updateStatus("error");
+      cleanupCurrentTrack();
+    }
+  }
+}
+function postWorkerMessage(message) {
+  self.postMessage(message);
+}
+function updateStatus(status) {
+  if (status === currentStatus)
+    return;
+  console.log(`[WavePlayer Worker] Status changing: ${currentStatus} -> ${status}`);
+  currentStatus = status;
+  postWorkerMessage({
+    type: "STATUS_UPDATE",
+    status: currentStatus,
+    trackId: currentTrackId ?? undefined
+  });
+}
+function cleanupCurrentTrack() {
+  console.log("[WavePlayer Worker] Cleaning up current track resources...");
+  if (abortController) {
+    abortController.abort();
+    abortController = null;
+  }
+  if (audioDecoder) {
+    audioDecoder.close();
+    audioDecoder = null;
+  }
+  if (audioFetcher) {
+    audioFetcher.abort();
+    audioFetcher = null;
+  }
+  currentTrack = null;
+  currentTrackId = null;
+  totalDecodedDuration = 0;
+  reportedTrackReady = false;
+  expectedChannels = 0;
+  expectedSampleRate = 0;
+  currentWavHeaderInfo = null;
+  if (ringBuffer) {
+    ringBuffer.clear();
+    ringBuffer = null;
+    console.log("[WavePlayer Worker] RingBuffer cleared and reset.");
+  }
+}
+function getString(view, offset, length) {
+  let result = "";
+  for (let i = 0;i < length; i++) {
+    result += String.fromCharCode(view.getUint8(offset + i));
+  }
+  return result;
+}
+async function fetchAndParseHeader(url) {
+  console.log("[WavePlayer Worker] Fetching track header for:", url);
+  abortController = new AbortController;
+  try {
+    const response = await fetch(url, {
+      signal: abortController.signal,
+      headers: { Range: "bytes=0-99" }
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP error fetching header: ${response.status} ${response.statusText}`);
+    }
+    if (!response.body) {
+      throw new Error("Response body is null.");
+    }
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength < 44) {
+      throw new Error("Downloaded header data is too small.");
+    }
+    const view = new DataView(buffer);
+    if (getString(view, 0, 4) !== "RIFF")
+      throw new Error("Invalid WAV file: Missing 'RIFF' marker.");
+    if (getString(view, 8, 4) !== "WAVE")
+      throw new Error("Invalid WAV file: Missing 'WAVE' marker.");
+    let offset = 12;
+    let fmtChunkFound = false;
+    let dataChunkFound = false;
+    const headerInfo = {};
+    while (offset < view.byteLength - 8) {
+      const chunkId = getString(view, offset, 4);
+      const chunkSize = view.getUint32(offset + 4, true);
+      if (chunkId === "fmt ") {
+        console.log(`[WavePlayer Worker] Found 'fmt ' chunk at offset ${offset}, size ${chunkSize}`);
+        if (chunkSize < 16)
+          throw new Error("'fmt ' chunk size is too small.");
+        headerInfo.format = view.getUint16(offset + 8, true);
+        headerInfo.numChannels = view.getUint16(offset + 10, true);
+        headerInfo.sampleRate = view.getUint32(offset + 12, true);
+        headerInfo.byteRate = view.getUint32(offset + 16, true);
+        headerInfo.blockAlign = view.getUint16(offset + 20, true);
+        headerInfo.bitsPerSample = view.getUint16(offset + 22, true);
+        fmtChunkFound = true;
+        if (headerInfo.format !== 1 && headerInfo.format !== 3) {
+          throw new Error(`Unsupported WAV format code: Expected PCM (1) or IEEE Float (3), got ${headerInfo.format}`);
+        }
+        if (headerInfo.numChannels !== 2) {
+          throw new Error(`Unsupported channel count: Expected Stereo (2), got ${headerInfo.numChannels}`);
+        }
+        if (![16, 24, 32].includes(headerInfo.bitsPerSample)) {
+          throw new Error(`Unsupported bit depth: Expected 16, 24, or 32-bit, got ${headerInfo.bitsPerSample}`);
+        }
+        if (headerInfo.format === 3 && headerInfo.bitsPerSample !== 32) {
+          throw new Error(`Invalid format combination: IEEE Float (3) requires 32-bit depth, got ${headerInfo.bitsPerSample}`);
+        }
+        console.log("[WavePlayer Worker] Parsed 'fmt ' chunk (validation passed):", headerInfo);
+      } else if (chunkId === "data") {
+        console.log(`[WavePlayer Worker] Found 'data' chunk at offset ${offset}, size ${chunkSize}`);
+        headerInfo.dataOffset = offset + 8;
+        headerInfo.dataSize = chunkSize;
+        dataChunkFound = true;
+        console.log("[WavePlayer Worker] Parsed 'data' chunk info:", { dataOffset: headerInfo.dataOffset, dataSize: headerInfo.dataSize });
+      } else {
+        console.log(`[WavePlayer Worker] Skipping chunk '${chunkId}' at offset ${offset}`);
+      }
+      if (fmtChunkFound && dataChunkFound)
+        break;
+      offset += 8 + chunkSize;
+      if (chunkSize % 2 !== 0)
+        offset++;
+    }
+    if (!fmtChunkFound)
+      throw new Error("Could not find 'fmt ' chunk in header.");
+    if (!dataChunkFound)
+      throw new Error("Could not find 'data' chunk in header.");
+    if (headerInfo.format === undefined || headerInfo.numChannels === undefined || headerInfo.sampleRate === undefined || headerInfo.byteRate === undefined || headerInfo.blockAlign === undefined || headerInfo.bitsPerSample === undefined || headerInfo.dataOffset === undefined || headerInfo.dataSize === undefined) {
+      throw new Error("Failed to parse all required WAV header fields.");
+    }
+    console.log("[WavePlayer Worker] Successfully parsed WAV header:", headerInfo);
+    return headerInfo;
+  } catch (error) {
+    console.error("[WavePlayer Worker] Error fetching or parsing WAV header:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    postWorkerMessage({
+      type: "ERROR",
+      message: `Failed to load WAV header: ${errorMessage}`,
+      trackId: currentTrackId ?? undefined,
+      error: error instanceof Error ? error : new Error(errorMessage)
+    });
+    updateStatus("error");
+    cleanupCurrentTrack();
+    return null;
+  }
+}
+async function handleLoadWav(command) {
   cleanupCurrentTrack();
-  updateStatus("stopped");
   currentTrack = command.track;
   currentTrackId = command.track.id;
   updateStatus("loading");
   abortController = new AbortController;
-  const guessedConfig = guessDecoderConfig(currentTrack.src);
-  if (!guessedConfig) {
+  currentWavHeaderInfo = null;
+  const parsedHeader = await fetchAndParseHeader(currentTrack.src);
+  if (!parsedHeader) {
+    console.error("[WavePlayer Worker] Failed to parse WAV header for:", currentTrack.src);
+    return;
+  }
+  currentWavHeaderInfo = parsedHeader;
+  expectedChannels = currentWavHeaderInfo.numChannels;
+  expectedSampleRate = currentWavHeaderInfo.sampleRate;
+  console.log(`[WavePlayer Worker] WAV header processed. Expecting ${expectedChannels} channels @ ${expectedSampleRate}Hz.`);
+  if (!stateBufferSab || !ringBufferDataSab) {
+    console.error("[WavePlayer Worker] Cannot initialize RingBuffer: SharedArrayBuffers not available.");
     postWorkerMessage({
       type: "ERROR",
-      message: `Could not determine decoder configuration for ${currentTrack.src}`,
+      message: "Internal error: Audio buffers unavailable for WAV processing.",
       trackId: currentTrackId
     });
     updateStatus("error");
+    cleanupCurrentTrack();
     return;
   }
   try {
-    audioDecoder = new AudioDecoderWrapper({
-      onDecoded: handleDecodedChunk,
-      onError: handleDecodeError
+    console.log("[WavePlayer Worker] Initializing RingBuffer for WAV...");
+    ringBuffer = new RingBuffer(stateBufferSab, ringBufferDataSab, expectedChannels);
+    ringBuffer.clear();
+    console.log("[WavePlayer Worker] RingBuffer initialized and cleared.");
+    let duration = 0;
+    if (currentWavHeaderInfo.byteRate > 0) {
+      duration = currentWavHeaderInfo.dataSize / currentWavHeaderInfo.byteRate;
+    } else {
+      console.warn("[WavePlayer Worker] Cannot calculate duration: byteRate is zero in WAV header.");
+    }
+    console.log(`[WavePlayer Worker] Calculated WAV duration: ${duration}s`);
+    postWorkerMessage({
+      type: "TRACK_READY",
+      trackId: currentTrackId,
+      duration,
+      sampleRate: expectedSampleRate,
+      numberOfChannels: expectedChannels
     });
-    await audioDecoder.configure(guessedConfig);
-    audioFetcher = new AudioFetcher({
-      onChunk: handleFetchedChunk,
-      onComplete: handleFetchComplete,
-      onError: handleFetchError,
-      onProgress: handleFetchProgress
-    });
-    audioFetcher.fetchAudio(currentTrack.src);
-  } catch (configError) {
-    console.error("[WavePlayer Worker] Failed to configure decoder during LOAD:", configError);
+    reportedTrackReady = true;
+    updateStatus("ready");
+  } catch (error) {
+    console.error("[WavePlayer Worker] Failed to initialize RingBuffer for WAV:", error);
+    const message = error instanceof Error ? error.message : String(error);
     postWorkerMessage({
       type: "ERROR",
-      message: `Audio fetch failed: ${configError instanceof Error ? configError.message : String(configError)}`,
+      message: `Failed to prepare audio buffer for WAV: ${message}`,
       trackId: currentTrackId,
-      error: configError instanceof Error ? configError : new Error(String(configError))
+      error
+    });
+    updateStatus("error");
+    cleanupCurrentTrack();
+    return;
+  }
+  audioFetcher = new AudioFetcher({
+    onChunk: handleFetchedWavChunk,
+    onComplete: handleWavFetchComplete,
+    onError: handleWavFetchError,
+    onProgress: handleFetchProgress
+  });
+  const dataEnd = currentWavHeaderInfo.dataOffset + currentWavHeaderInfo.dataSize - 1;
+  const fetchOptions = {
+    headers: { Range: `bytes=${currentWavHeaderInfo.dataOffset}-${dataEnd}` }
+  };
+  console.log(`[WavePlayer Worker] Starting fetch for WAV data chunk: bytes=${currentWavHeaderInfo.dataOffset}-${dataEnd}`);
+  audioFetcher.fetchAudio(currentTrack.src, fetchOptions);
+}
+function handleFetchedWavChunk(chunkBuffer) {
+  if (!ringBuffer || !currentTrackId) {
+    console.warn("[WavePlayer Worker] Skipping fetched WAV chunk: RingBuffer not ready or track changed.");
+    return;
+  }
+  if (!currentWavHeaderInfo) {
+    console.error("[WavePlayer Worker] Skipping fetched WAV chunk: Missing header info.");
+    return;
+  }
+  const { bitsPerSample, numChannels, format } = currentWavHeaderInfo;
+  const bytesPerSample = bitsPerSample / 8;
+  const bytesPerFrame = bytesPerSample * numChannels;
+  const numFrames = Math.floor(chunkBuffer.byteLength / bytesPerFrame);
+  if (numFrames <= 0 || chunkBuffer.byteLength === 0) {
+    return;
+  }
+  const planarData = [];
+  for (let i = 0;i < numChannels; ++i) {
+    planarData.push(new Float32Array(numFrames));
+  }
+  const view = new DataView(chunkBuffer);
+  try {
+    switch (bitsPerSample) {
+      case 16:
+        for (let i = 0;i < numFrames; ++i) {
+          for (let ch = 0;ch < numChannels; ++ch) {
+            const sampleOffset = (i * numChannels + ch) * bytesPerSample;
+            planarData[ch][i] = view.getInt16(sampleOffset, true) / 32768;
+          }
+        }
+        break;
+      case 24:
+        for (let i = 0;i < numFrames; ++i) {
+          for (let ch = 0;ch < numChannels; ++ch) {
+            const sampleOffset = (i * numChannels + ch) * bytesPerSample;
+            const byte1 = view.getUint8(sampleOffset);
+            const byte2 = view.getUint8(sampleOffset + 1);
+            const byte3 = view.getUint8(sampleOffset + 2);
+            let intValue = byte1 | byte2 << 8 | byte3 << 16;
+            if (intValue & 8388608) {
+              intValue |= 4278190080;
+            }
+            planarData[ch][i] = intValue / 8388608;
+          }
+        }
+        break;
+      case 32:
+        if (format === 1) {
+          for (let i = 0;i < numFrames; ++i) {
+            for (let ch = 0;ch < numChannels; ++ch) {
+              const sampleOffset = (i * numChannels + ch) * bytesPerSample;
+              planarData[ch][i] = view.getInt32(sampleOffset, true) / 2147483648;
+            }
+          }
+        } else if (format === 3) {
+          for (let i = 0;i < numFrames; ++i) {
+            for (let ch = 0;ch < numChannels; ++ch) {
+              const sampleOffset = (i * numChannels + ch) * bytesPerSample;
+              planarData[ch][i] = view.getFloat32(sampleOffset, true);
+            }
+          }
+        } else {
+          throw new Error(`Unsupported format code ${format} for 32-bit depth.`);
+        }
+        break;
+      default:
+        throw new Error(`Unsupported bit depth: ${bitsPerSample}`);
+    }
+    if (!ringBuffer?.write(planarData)) {
+      console.warn(`[WavePlayer Worker] RingBuffer full while writing WAV data. Dropping ${numFrames} frames.`);
+    }
+  } catch (error) {
+    console.error("[WavePlayer Worker] Error processing WAV chunk:", error);
+    postWorkerMessage({
+      type: "ERROR",
+      message: `Error processing WAV audio data: ${error instanceof Error ? error.message : String(error)}`,
+      trackId: currentTrackId,
+      error
     });
     updateStatus("error");
     cleanupCurrentTrack();
   }
+}
+function handleWavFetchComplete() {
+  console.log("[WavePlayer Worker] WAV data fetch complete.");
+  if (currentStatus === "loading") {
+    console.warn("[WavePlayer Worker] WAV fetch complete, but status was still 'loading'. Setting to 'ready'.");
+    updateStatus("ready");
+  }
+}
+function handleWavFetchError(error) {
+  console.error("[WavePlayer Worker] WAV data fetch failed:", error);
+  if (error.name === "AbortError") {
+    console.log("[WavePlayer Worker] WAV data fetch aborted.");
+    return;
+  }
+  postWorkerMessage({
+    type: "ERROR",
+    message: `WAV data fetch failed: ${error.message}`,
+    trackId: currentTrackId ?? undefined,
+    error
+  });
+  updateStatus("error");
+  cleanupCurrentTrack();
 }
 function handleFetchProgress(downloadedBytes, totalBytes) {
   if (!currentTrackId)
@@ -715,7 +1008,12 @@ self.onmessage = (event) => {
       self.close();
       break;
     default:
-      console.error("[WavePlayer Worker] Received unknown command:", command);
+      const receivedCommand = command;
+      let commandType = "unknown";
+      if (typeof receivedCommand === "object" && receivedCommand !== null && "type" in receivedCommand && typeof receivedCommand.type === "string") {
+        commandType = receivedCommand.type;
+      }
+      console.error("[WavePlayer Worker] Received unknown command type:", commandType, receivedCommand);
       postWorkerMessage({ type: "ERROR", message: "Unknown command received" });
       break;
   }

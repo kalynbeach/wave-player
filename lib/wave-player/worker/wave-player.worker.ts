@@ -13,7 +13,7 @@ import type {
   LoadCommand,
 } from "../types/worker-messages";
 import { AudioFetcher } from "./audio-fetcher";
-import { AudioDecoderWrapper, type AudioDecoderConfig } from "./audio-decoder";
+import { AudioDecoderWrapper } from "./audio-decoder";
 import {
   RingBuffer,
   PLAYBACK_STATE_INDEX,
@@ -37,76 +37,7 @@ let totalDecodedDuration = 0;
 let reportedTrackReady = false;
 let expectedChannels = 0;
 let expectedSampleRate = 0;
-
-// NEW WORKER FUNCTIONS (WIP)
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function fetchAndParseHeader(url: string): Promise<WavePlayerTrackHeaderInfo | null> {
-  console.log("[WavePlayer Worker] Fetching track header for:", url);
-  // TODO: implement WAV file header fetching and parsing into WavePlayerTrackHeaderInfo
-  return null; // PLACEHOLDER
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-async function streamAndProcessData(url: string, headerInfo: WavePlayerTrackHeaderInfo): Promise<void> {
-  console.log("[WavePlayer Worker] Streaming and processing track data for:", url);
-  // TODO: implement data streaming and AudioData creation & posting
-}
-
-
-// === Helper Functions ===
-
-/**
- * Posts a message back to the main thread (WavePlayerProvider).
- * @param message The message object to send.
- */
-function postWorkerMessage(message: WorkerMessage): void {
-  // console.log("[WavePlayer Worker] Posting message:", message.type, message); // Verbose logging
-  self.postMessage(message);
-}
-
-/**
- * Updates the internal status and posts a STATUS_UPDATE message.
- * @param status The new status.
- */
-function updateStatus(status: WavePlayerStatus): void {
-  if (status === currentStatus) return; // Avoid redundant updates
-  console.log(`[WavePlayer Worker] Status changing: ${currentStatus} -> ${status}`);
-  currentStatus = status;
-  postWorkerMessage({
-    type: "STATUS_UPDATE",
-    status: currentStatus,
-    trackId: currentTrackId ?? undefined,
-  });
-}
-
-/**
- * Cleans up resources associated with the current fetch/decode cycle.
- */
-function cleanupCurrentTrack(): void {
-  console.log("[WavePlayer Worker] Cleaning up current track resources...");
-  if (abortController) {
-    abortController.abort(); // Abort any ongoing fetch
-    abortController = null;
-  }
-  if (audioDecoder) {
-    audioDecoder.close(); // Close the decoder
-    audioDecoder = null;
-  }
-  audioFetcher = null; // Fetcher is implicitly stopped by abort
-  currentTrack = null;
-  currentTrackId = null;
-  totalDecodedDuration = 0;
-  reportedTrackReady = false;
-  expectedChannels = 0;
-  expectedSampleRate = 0;
-
-  if (ringBuffer) {
-      ringBuffer.clear();
-      ringBuffer = null;
-      console.log("[WavePlayer Worker] RingBuffer cleared and reset.");
-  }
-}
+let currentWavHeaderInfo: WavePlayerTrackHeaderInfo | null = null;
 
 // === Command Handlers ===
 
@@ -136,10 +67,8 @@ function handleInitialize(command: InitializeCommand): void {
   stateBufferSab = command.stateBufferSab;
 
   isInitialized = true;
-  // Create Int32Array view for state buffer AFTER it's assigned
   if (stateBufferSab) {
       stateBufferView = new Int32Array(stateBufferSab);
-      // Ensure initial state is paused (might be redundant if provider does it, but safe)
       Atomics.store(stateBufferView, PLAYBACK_STATE_INDEX, 0);
   } else {
       console.error("[WavePlayer Worker] State SAB is null after assignment in handleInitialize!");
@@ -198,9 +127,9 @@ function guessDecoderConfig(url: string): AudioDecoderConfig | null {
      // Placeholder - This might fail, WAV often doesn't need a decoder in the same way
      return {
         // codec: "pcm-f32le", // Example, may vary based on actual WAV format
-        codec: "pcm-float",
-        sampleRate: 48000,
-        numberOfChannels: 2,
+        codec: "pcm-float", // This isn't typically used for decoder config but kept for placeholder consistency
+        sampleRate: 48000, // Will be overwritten by header parse for WAV
+        numberOfChannels: 2, // Will be overwritten by header parse for WAV
      };
    }
 
@@ -210,7 +139,7 @@ function guessDecoderConfig(url: string): AudioDecoderConfig | null {
 
 /**
  * Handles the LOAD command.
- * Initiates fetching and decoding of the specified track.
+ * Determines if the track is WAV or other format and delegates accordingly.
  */
 async function handleLoad(command: LoadCommand): Promise<void> {
   if (!isInitialized) {
@@ -221,9 +150,263 @@ async function handleLoad(command: LoadCommand): Promise<void> {
     return;
   }
 
-  console.log(`[WavePlayer Worker] Handling LOAD command for: ${command.track.title}`);
+  // Check if the track is WAV
+  if (command.track.src.toLowerCase().endsWith(".wav")) {
+    console.log("[WavePlayer Worker] Handling LOAD for WAV format track:", command.track.src);
+    // Call the dedicated WAV handler (which now includes fetching/parsing/ringbuffer init/fetch start)
+    await handleLoadWav(command); // Await potentially async operations inside
+  } else {
+    console.log(`[WavePlayer Worker] Handling LOAD command for non-WAV format: ${command.track.title}`);
+    cleanupCurrentTrack(); // Cleanup previous track resources
+    updateStatus("stopped");
+
+    currentTrack = command.track;
+    currentTrackId = command.track.id;
+    updateStatus("loading");
+
+    abortController = new AbortController();
+
+    // Guess decoder config for non-WAV formats
+    const guessedConfig = guessDecoderConfig(currentTrack.src);
+    if (!guessedConfig) {
+      postWorkerMessage({
+        type: "ERROR",
+        message: `Could not determine decoder configuration for ${currentTrack.src}`,
+        trackId: currentTrackId,
+      });
+      updateStatus("error");
+      cleanupCurrentTrack(); // Cleanup needed here too
+      return;
+    }
+
+    // Initialize and configure the AudioDecoderWrapper
+    try {
+      audioDecoder = new AudioDecoderWrapper({
+        onDecoded: handleDecodedChunk, // Use the original handler for decoded AudioData
+        onError: handleDecodeError, // Use the original handler for decoder errors
+      });
+      await audioDecoder.configure(guessedConfig);
+
+      // Initialize the AudioFetcher for encoded chunks
+      audioFetcher = new AudioFetcher({
+        onChunk: handleFetchedChunk, // Use the original handler for encoded chunks
+        onComplete: handleFetchComplete, // Use the original handler for fetch complete
+        onError: handleFetchError, // Use the original handler for fetch errors
+        onProgress: handleFetchProgress,
+      });
+      // Fetch the whole file for the decoder path
+      audioFetcher.fetchAudio(currentTrack.src);
+
+    } catch (configError) {
+      console.error("[WavePlayer Worker] Failed to configure decoder during LOAD:", configError);
+      postWorkerMessage({
+        type: "ERROR",
+        message: `Audio decoder setup failed: ${configError instanceof Error ? configError.message : String(configError)}`,
+        trackId: currentTrackId,
+        error: configError instanceof Error ? configError : new Error(String(configError)),
+      });
+      updateStatus("error");
+      cleanupCurrentTrack();
+    }
+  }
+}
+
+// === Helper Functions ===
+
+/**
+ * Posts a message back to the main thread (WavePlayerProvider).
+ * @param message The message object to send.
+ */
+function postWorkerMessage(message: WorkerMessage): void {
+  // console.log("[WavePlayer Worker] Posting message:", message.type, message); // Verbose logging
+  self.postMessage(message);
+}
+
+/**
+ * Updates the internal status and posts a STATUS_UPDATE message.
+ * @param status The new status.
+ */
+function updateStatus(status: WavePlayerStatus): void {
+  if (status === currentStatus) return; // Avoid redundant updates
+  console.log(`[WavePlayer Worker] Status changing: ${currentStatus} -> ${status}`);
+  currentStatus = status;
+  postWorkerMessage({
+    type: "STATUS_UPDATE",
+    status: currentStatus,
+    trackId: currentTrackId ?? undefined,
+  });
+}
+
+/**
+ * Cleans up resources associated with the current fetch/decode cycle.
+ */
+function cleanupCurrentTrack(): void {
+  console.log("[WavePlayer Worker] Cleaning up current track resources...");
+  if (abortController) {
+    abortController.abort(); // Abort any ongoing fetch
+    abortController = null;
+  }
+  if (audioDecoder) {
+    audioDecoder.close(); // Close the decoder
+    audioDecoder = null;
+  }
+  if (audioFetcher) { // Also abort the WAV fetcher if it exists
+      audioFetcher.abort();
+      audioFetcher = null;
+  }
+  currentTrack = null;
+  currentTrackId = null;
+  totalDecodedDuration = 0;
+  reportedTrackReady = false;
+  expectedChannels = 0;
+  expectedSampleRate = 0;
+  currentWavHeaderInfo = null; // Reset WAV header info too
+
+  if (ringBuffer) {
+      ringBuffer.clear();
+      ringBuffer = null;
+      console.log("[WavePlayer Worker] RingBuffer cleared and reset.");
+  }
+}
+
+/** Helper to read ASCII strings from DataView */
+function getString(view: DataView, offset: number, length: number): string {
+  let result = "";
+  for (let i = 0; i < length; i++) {
+    result += String.fromCharCode(view.getUint8(offset + i));
+  }
+  return result;
+}
+
+/**
+ * Fetches the initial part of a WAV file and parses its header.
+ * Supports 16, 24, and 32-bit (integer/float) stereo PCM WAV files.
+ * @param url The URL of the WAV file.
+ * @returns A promise resolving to the parsed header info or null on error.
+ */
+async function fetchAndParseHeader(url: string): Promise<WavePlayerTrackHeaderInfo | null> {
+  console.log("[WavePlayer Worker] Fetching track header for:", url);
+  abortController = new AbortController();
+
+  try {
+    const response = await fetch(url, {
+      signal: abortController.signal,
+      headers: { "Range": "bytes=0-99" },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error fetching header: ${response.status} ${response.statusText}`);
+    }
+    if (!response.body) {
+        throw new Error("Response body is null.");
+    }
+
+    const buffer = await response.arrayBuffer();
+    if (buffer.byteLength < 44) {
+        throw new Error("Downloaded header data is too small.");
+    }
+
+    const view = new DataView(buffer);
+
+    if (getString(view, 0, 4) !== "RIFF") throw new Error("Invalid WAV file: Missing 'RIFF' marker.");
+    if (getString(view, 8, 4) !== "WAVE") throw new Error("Invalid WAV file: Missing 'WAVE' marker.");
+
+    let offset = 12;
+    let fmtChunkFound = false;
+    let dataChunkFound = false;
+    const headerInfo: Partial<WavePlayerTrackHeaderInfo> = {};
+
+    while (offset < view.byteLength - 8) {
+      const chunkId = getString(view, offset, 4);
+      const chunkSize = view.getUint32(offset + 4, true);
+
+      if (chunkId === "fmt ") {
+        console.log(`[WavePlayer Worker] Found 'fmt ' chunk at offset ${offset}, size ${chunkSize}`);
+        if (chunkSize < 16) throw new Error("'fmt ' chunk size is too small.");
+
+        headerInfo.format = view.getUint16(offset + 8, true);
+        headerInfo.numChannels = view.getUint16(offset + 10, true);
+        headerInfo.sampleRate = view.getUint32(offset + 12, true);
+        headerInfo.byteRate = view.getUint32(offset + 16, true);
+        headerInfo.blockAlign = view.getUint16(offset + 20, true);
+        headerInfo.bitsPerSample = view.getUint16(offset + 22, true);
+        fmtChunkFound = true;
+
+        // --- Validation ---
+        if (headerInfo.format !== 1 && headerInfo.format !== 3) { // Allow PCM (1) and IEEE Float (3)
+            throw new Error(`Unsupported WAV format code: Expected PCM (1) or IEEE Float (3), got ${headerInfo.format}`);
+        }
+        if (headerInfo.numChannels !== 2) {
+             // Keep stereo check for now - Multi-channel support requires RingBuffer/Worklet changes
+             throw new Error(`Unsupported channel count: Expected Stereo (2), got ${headerInfo.numChannels}`);
+        }
+        if (![16, 24, 32].includes(headerInfo.bitsPerSample)) { // Allow 16, 24, 32
+            throw new Error(`Unsupported bit depth: Expected 16, 24, or 32-bit, got ${headerInfo.bitsPerSample}`);
+        }
+        if (headerInfo.format === 3 && headerInfo.bitsPerSample !== 32) {
+             throw new Error(`Invalid format combination: IEEE Float (3) requires 32-bit depth, got ${headerInfo.bitsPerSample}`);
+        }
+         console.log("[WavePlayer Worker] Parsed 'fmt ' chunk (validation passed):", headerInfo);
+
+      } else if (chunkId === "data") {
+        console.log(`[WavePlayer Worker] Found 'data' chunk at offset ${offset}, size ${chunkSize}`);
+        headerInfo.dataOffset = offset + 8;
+        headerInfo.dataSize = chunkSize;
+        dataChunkFound = true;
+        console.log("[WavePlayer Worker] Parsed 'data' chunk info:", { dataOffset: headerInfo.dataOffset, dataSize: headerInfo.dataSize });
+      } else {
+        console.log(`[WavePlayer Worker] Skipping chunk '${chunkId}' at offset ${offset}`);
+      }
+
+      if (fmtChunkFound && dataChunkFound) break;
+
+      offset += 8 + chunkSize;
+      if (chunkSize % 2 !== 0) offset++;
+
+    }
+
+    if (!fmtChunkFound) throw new Error("Could not find 'fmt ' chunk in header.");
+    if (!dataChunkFound) throw new Error("Could not find 'data' chunk in header.");
+
+    if (
+        headerInfo.format === undefined ||
+        headerInfo.numChannels === undefined ||
+        headerInfo.sampleRate === undefined ||
+        headerInfo.byteRate === undefined ||
+        headerInfo.blockAlign === undefined ||
+        headerInfo.bitsPerSample === undefined ||
+        headerInfo.dataOffset === undefined ||
+        headerInfo.dataSize === undefined
+    ) {
+      throw new Error("Failed to parse all required WAV header fields.");
+    }
+
+    console.log("[WavePlayer Worker] Successfully parsed WAV header:", headerInfo);
+    return headerInfo as WavePlayerTrackHeaderInfo;
+
+  } catch (error) {
+    console.error("[WavePlayer Worker] Error fetching or parsing WAV header:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    postWorkerMessage({
+      type: "ERROR",
+      message: `Failed to load WAV header: ${errorMessage}`,
+      trackId: currentTrackId ?? undefined,
+      error: error instanceof Error ? error : new Error(errorMessage),
+    });
+    updateStatus("error");
+    cleanupCurrentTrack();
+    return null;
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function streamAndProcessData(url: string, _headerInfo: WavePlayerTrackHeaderInfo): Promise<void> {
+  console.log("[WavePlayer Worker] Streaming and processing track data for:", url);
+  // TODO: implement data streaming and AudioData creation & posting
+}
+
+async function handleLoadWav(command: LoadCommand) {
   cleanupCurrentTrack();
-  updateStatus("stopped");
 
   currentTrack = command.track;
   currentTrackId = command.track.id;
@@ -231,46 +414,253 @@ async function handleLoad(command: LoadCommand): Promise<void> {
 
   abortController = new AbortController();
 
-  const guessedConfig = guessDecoderConfig(currentTrack.src);
-  if (!guessedConfig) {
+  currentWavHeaderInfo = null;
+  const parsedHeader = await fetchAndParseHeader(currentTrack.src);
+
+  if (!parsedHeader) {
+    console.error("[WavePlayer Worker] Failed to parse WAV header for:", currentTrack.src);
+    return;
+  }
+
+  currentWavHeaderInfo = parsedHeader;
+  expectedChannels = currentWavHeaderInfo.numChannels;
+  expectedSampleRate = currentWavHeaderInfo.sampleRate;
+
+  console.log(`[WavePlayer Worker] WAV header processed. Expecting ${expectedChannels} channels @ ${expectedSampleRate}Hz.`);
+
+  // Step 3: Initialize RingBuffer for WAV
+  if (!stateBufferSab || !ringBufferDataSab) {
+    console.error("[WavePlayer Worker] Cannot initialize RingBuffer: SharedArrayBuffers not available.");
     postWorkerMessage({
       type: "ERROR",
-      message: `Could not determine decoder configuration for ${currentTrack.src}`,
+      message: "Internal error: Audio buffers unavailable for WAV processing.",
       trackId: currentTrackId,
     });
     updateStatus("error");
+    cleanupCurrentTrack(); // Clean up as we cannot proceed
     return;
   }
 
   try {
-    audioDecoder = new AudioDecoderWrapper({
-      onDecoded: handleDecodedChunk,
-      onError: handleDecodeError,
-    });
-    await audioDecoder.configure(guessedConfig);
+      console.log("[WavePlayer Worker] Initializing RingBuffer for WAV...");
+      ringBuffer = new RingBuffer(stateBufferSab, ringBufferDataSab, expectedChannels);
+      ringBuffer.clear();
+      console.log("[WavePlayer Worker] RingBuffer initialized and cleared.");
 
-    audioFetcher = new AudioFetcher({
-      onChunk: handleFetchedChunk,
-      onComplete: handleFetchComplete,
-      onError: handleFetchError,
-      onProgress: handleFetchProgress,
-    });
-    audioFetcher.fetchAudio(currentTrack.src);
+      // Calculate duration
+      let duration = 0;
+      if (currentWavHeaderInfo.byteRate > 0) {
+          duration = currentWavHeaderInfo.dataSize / currentWavHeaderInfo.byteRate;
+      } else {
+          console.warn("[WavePlayer Worker] Cannot calculate duration: byteRate is zero in WAV header.");
+      }
+      console.log(`[WavePlayer Worker] Calculated WAV duration: ${duration}s`);
 
-  } catch (configError) {
-    console.error("[WavePlayer Worker] Failed to configure decoder during LOAD:", configError);
-    postWorkerMessage({
-      type: "ERROR",
-      message: `Audio fetch failed: ${configError instanceof Error ? configError.message : String(configError)}`,
-      trackId: currentTrackId,
-      error: configError instanceof Error ? configError : new Error(String(configError)),
-    });
-    updateStatus("error");
-    cleanupCurrentTrack();
+      // Notify provider that track is ready
+      postWorkerMessage({
+        type: "TRACK_READY",
+        trackId: currentTrackId,
+        duration: duration,
+        sampleRate: expectedSampleRate,
+        numberOfChannels: expectedChannels,
+      });
+      reportedTrackReady = true;
+      updateStatus("ready"); // Update status to ready
+
+  } catch (error) {
+      console.error("[WavePlayer Worker] Failed to initialize RingBuffer for WAV:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      postWorkerMessage({
+        type: "ERROR",
+        message: `Failed to prepare audio buffer for WAV: ${message}`,
+        trackId: currentTrackId,
+        error: error,
+      });
+      updateStatus("error");
+      cleanupCurrentTrack();
+      return; // Stop WAV loading process
   }
+
+  // TODO: Step 4: Stream & Process WAV Data (Phase 1, Step 4)
+  // Instantiate the AudioFetcher for the WAV data chunk
+  audioFetcher = new AudioFetcher({
+      onChunk: handleFetchedWavChunk,
+      onComplete: handleWavFetchComplete,
+      onError: handleWavFetchError,
+      onProgress: handleFetchProgress, // Reuse existing progress handler
+  });
+
+  // Start fetching the audio data chunk using the Range header
+  const dataEnd = currentWavHeaderInfo.dataOffset + currentWavHeaderInfo.dataSize - 1;
+  const fetchOptions: RequestInit = {
+      headers: { "Range": `bytes=${currentWavHeaderInfo.dataOffset}-${dataEnd}` }
+  };
+  console.log(`[WavePlayer Worker] Starting fetch for WAV data chunk: bytes=${currentWavHeaderInfo.dataOffset}-${dataEnd}`);
+  audioFetcher.fetchAudio(currentTrack.src, fetchOptions);
 }
 
 // === Fetch & Decode Callbacks ===
+
+// --- NEW WAV CALLBACKS (Phase 1, Step 4) ---
+
+/**
+ * Handles a chunk of raw PCM data fetched for a WAV file.
+ * Converts 16-bit interleaved stereo data to f32-planar and writes to the RingBuffer.
+ * @param chunkBuffer The ArrayBuffer containing the raw PCM data.
+ */
+function handleFetchedWavChunk(chunkBuffer: ArrayBuffer): void {
+    if (!ringBuffer || !currentTrackId) {
+        console.warn("[WavePlayer Worker] Skipping fetched WAV chunk: RingBuffer not ready or track changed.");
+        return;
+    }
+    if (!currentWavHeaderInfo) {
+         console.error("[WavePlayer Worker] Skipping fetched WAV chunk: Missing header info.");
+          return;
+    }
+
+    // Now use the stored header info for format details
+    const { bitsPerSample, numChannels, format } = currentWavHeaderInfo;
+    const bytesPerSample = bitsPerSample / 8;
+    const bytesPerFrame = bytesPerSample * numChannels;
+    // Ensure we only process whole frames
+    const numFrames = Math.floor(chunkBuffer.byteLength / bytesPerFrame);
+
+    if (numFrames <= 0 || chunkBuffer.byteLength === 0) {
+        // console.log("[WavePlayer Worker] Received empty or invalid size WAV chunk.");
+        return;
+    }
+
+    // Ensure planarData is correctly typed
+    const planarData: Float32Array[] = [];
+    for (let i = 0; i < numChannels; ++i) {
+        planarData.push(new Float32Array(numFrames));
+    }
+
+    const view = new DataView(chunkBuffer);
+
+    try {
+        // De-interleave and convert based on bit depth and format
+        switch (bitsPerSample) {
+            case 16:
+                // Existing 16-bit logic
+                for (let i = 0; i < numFrames; ++i) {
+                    for (let ch = 0; ch < numChannels; ++ch) {
+                        const sampleOffset = (i * numChannels + ch) * bytesPerSample;
+                        // Read Int16, normalize to Float32
+                        planarData[ch][i] = view.getInt16(sampleOffset, true) / 32768.0;
+                    }
+                }
+                break;
+
+            case 24:
+                // 24-bit Integer PCM handling
+                for (let i = 0; i < numFrames; ++i) {
+                    for (let ch = 0; ch < numChannels; ++ch) {
+                        const sampleOffset = (i * numChannels + ch) * bytesPerSample;
+                        // Read 3 bytes (little-endian)
+                        const byte1 = view.getUint8(sampleOffset);
+                        const byte2 = view.getUint8(sampleOffset + 1);
+                        const byte3 = view.getUint8(sampleOffset + 2);
+
+                        // Combine into a 32-bit signed integer (manual sign extension)
+                        let intValue = byte1 | (byte2 << 8) | (byte3 << 16);
+                        if (intValue & 0x800000) { // Check if the 24th bit (sign bit) is set
+                            intValue |= 0xFF000000; // Extend the sign to 32 bits
+                        }
+
+                        // Normalize Int24 [-8388608, 8388607] to Float32 [-1.0, 1.0]
+                        // Use 8388608.0 (2^23) for normalization divisor
+                        planarData[ch][i] = intValue / 8388608.0;
+                    }
+                }
+                break;
+
+            case 32:
+                if (format === 1) {
+                    // 32-bit Integer PCM
+                    for (let i = 0; i < numFrames; ++i) {
+                        for (let ch = 0; ch < numChannels; ++ch) {
+                            const sampleOffset = (i * numChannels + ch) * bytesPerSample;
+                            // Read Int32, normalize to Float32
+                            // Use 2147483648.0 (2^31) for normalization divisor
+                            planarData[ch][i] = view.getInt32(sampleOffset, true) / 2147483648.0;
+                        }
+                    }
+                } else if (format === 3) {
+                    // 32-bit Float (IEEE Float)
+                    for (let i = 0; i < numFrames; ++i) {
+                        for (let ch = 0; ch < numChannels; ++ch) {
+                            const sampleOffset = (i * numChannels + ch) * bytesPerSample;
+                            // Read Float32 directly - no normalization needed
+                            planarData[ch][i] = view.getFloat32(sampleOffset, true);
+                        }
+                    }
+                } else {
+                    // Should not happen if header parsing validation is correct
+                     throw new Error(`Unsupported format code ${format} for 32-bit depth.`);
+                }
+                break;
+
+            default:
+                 // Should not happen if header parsing validation is correct
+                throw new Error(`Unsupported bit depth: ${bitsPerSample}`);
+        }
+
+        // Write the processed planar data to the RingBuffer
+        if (!ringBuffer?.write(planarData)) {
+              console.warn(`[WavePlayer Worker] RingBuffer full while writing WAV data. Dropping ${numFrames} frames.`);
+              // TODO: Consider pausing fetch if buffer stays full?
+        }
+
+    } catch (error) {
+        console.error("[WavePlayer Worker] Error processing WAV chunk:", error);
+        postWorkerMessage({
+          type: "ERROR",
+          message: `Error processing WAV audio data: ${error instanceof Error ? error.message : String(error)}`,
+          trackId: currentTrackId,
+          error: error,
+        });
+        updateStatus("error");
+        cleanupCurrentTrack(); // Stop processing on error
+    }
+}
+
+/**
+ * Called when the WAV data fetcher completes downloading the data chunk.
+ */
+function handleWavFetchComplete(): void {
+    console.log("[WavePlayer Worker] WAV data fetch complete.");
+    // Status should already be 'ready' or potentially 'playing'/'paused'
+    // If it was 'loading', something went wrong earlier.
+    if (currentStatus === "loading") {
+        console.warn("[WavePlayer Worker] WAV fetch complete, but status was still 'loading'. Setting to 'ready'.");
+        updateStatus("ready");
+    }
+    // TODO: Implement proper TRACK_ENDED logic based on buffer state and playback position later.
+    // We don't necessarily transition state here, the worklet consuming data handles playback end.
+}
+
+/**
+ * Called when an error occurs during the WAV data fetch.
+ */
+function handleWavFetchError(error: Error): void {
+    console.error("[WavePlayer Worker] WAV data fetch failed:", error);
+    // Ignore AbortError as it's expected during cleanup or track change
+    if (error.name === 'AbortError') {
+        console.log("[WavePlayer Worker] WAV data fetch aborted.");
+        return;
+    }
+    postWorkerMessage({
+        type: "ERROR",
+        message: `WAV data fetch failed: ${error.message}`,
+        trackId: currentTrackId ?? undefined,
+        error: error,
+    });
+    updateStatus("error");
+    cleanupCurrentTrack();
+}
+
+// --- Existing Callbacks (Used by AudioDecoder for non-WAV) ---
 
 function handleFetchProgress(downloadedBytes: number, totalBytes: number | null): void {
   if (!currentTrackId) return;
@@ -389,13 +779,11 @@ function handleDecodedChunk(decodedData: AudioData): void {
 
   if (!ringBuffer) {
     try {
-        // --- Stereo Check --- 
         if (numberOfChannels !== 2) {
             throw new Error(`Unsupported channel count: ${numberOfChannels}. Only stereo (2 channels) is supported.`);
         }
 
         console.log(`[WavePlayer Worker] First chunk decoded. Initializing RingBuffer with ${numberOfChannels} channels.`);
-        // Check format compatibility (needs 'f32-planar')
         if (format !== "f32-planar") {
            throw new Error(`Unsupported AudioData format: ${format}. Expected 'f32-planar'.`);
         }
@@ -503,7 +891,8 @@ self.onmessage = (event: MessageEvent<ProviderCommand>) => {
       break;
 
     case "LOAD":
-      handleLoad(command).catch(err => {
+      // Add catch block to handle potential promise rejection from handleLoad/handleLoadWav
+      handleLoad(command).catch((err: Error) => {
           console.error("[WavePlayer Worker] Unhandled error during LOAD:", err);
           postWorkerMessage({
               type: "ERROR",
@@ -570,7 +959,17 @@ self.onmessage = (event: MessageEvent<ProviderCommand>) => {
       break;
 
     default:
-      console.error("[WavePlayer Worker] Received unknown command:", command);
+      // Ensure command has a type property before logging it
+      // const commandType = typeof command === 'object' && command !== null && 'type' in command ? command.type : 'unknown';
+      // console.error("[WavePlayer Worker] Received unknown command type:", commandType, command);
+
+      // Handle 'never' type while still logging potential runtime errors
+      const receivedCommand: unknown = command; // Cast to unknown for safer handling
+      let commandType = 'unknown';
+      if (typeof receivedCommand === 'object' && receivedCommand !== null && 'type' in receivedCommand && typeof receivedCommand.type === 'string') {
+          commandType = receivedCommand.type; // Log type if possible
+      }
+      console.error("[WavePlayer Worker] Received unknown command type:", commandType, receivedCommand);
       postWorkerMessage({ type: "ERROR", message: "Unknown command received" });
       break;
   }
