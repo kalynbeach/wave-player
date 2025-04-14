@@ -1,20 +1,4 @@
-import type { WavePlayerTrack } from "./wave-player";
-
-/**
- * Consistent status reporting across Provider and Worker.
- */
-export type WavePlayerStatus =
-  | "initializing"
-  | "idle"
-  | "loading"
-  | "buffering" // Added to distinguish between initial load and buffering during playback/seek
-  | "ready" // Track loaded, ready to play (or resumed after buffering)
-  | "playing"
-  | "paused"
-  | "seeking"
-  | "ended" // Track finished playing naturally
-  | "stopped" // Playback explicitly stopped (e.g., new track loaded)
-  | "error";
+import type { WavePlayerStatus, WavePlayerTrack } from "./wave-player";
 
 // === Commands: Provider -> Worker ===
 

@@ -2,13 +2,16 @@
 /// <reference types="@types/dom-webcodecs" />
 
 import type {
+  WavePlayerStatus,
+  WavePlayerTrack,
+  WavePlayerTrackHeaderInfo,
+} from "../types/wave-player";
+import type {
   ProviderCommand,
   WorkerMessage,
   InitializeCommand,
   LoadCommand,
-  WavePlayerStatus,
 } from "../types/worker-messages";
-import type { WavePlayerTrack } from "../types/wave-player";
 import { AudioFetcher } from "./audio-fetcher";
 import { AudioDecoderWrapper, type AudioDecoderConfig } from "./audio-decoder";
 import {
@@ -34,6 +37,22 @@ let totalDecodedDuration = 0;
 let reportedTrackReady = false;
 let expectedChannels = 0;
 let expectedSampleRate = 0;
+
+// NEW WORKER FUNCTIONS (WIP)
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function fetchAndParseHeader(url: string): Promise<WavePlayerTrackHeaderInfo | null> {
+  console.log("[WavePlayer Worker] Fetching track header for:", url);
+  // TODO: implement WAV file header fetching and parsing into WavePlayerTrackHeaderInfo
+  return null; // PLACEHOLDER
+}
+
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+async function streamAndProcessData(url: string, headerInfo: WavePlayerTrackHeaderInfo): Promise<void> {
+  console.log("[WavePlayer Worker] Streaming and processing track data for:", url);
+  // TODO: implement data streaming and AudioData creation & posting
+}
+
 
 // === Helper Functions ===
 

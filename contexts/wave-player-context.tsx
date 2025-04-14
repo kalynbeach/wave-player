@@ -9,11 +9,10 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import type { WavePlayerTrack } from "@/lib/wave-player/types/wave-player";
+import type { WavePlayerStatus, WavePlayerTrack } from "@/lib/wave-player/types/wave-player";
 import type {
   ProviderCommand,
   WorkerMessage,
-  WavePlayerStatus,
 } from "@/lib/wave-player/types/worker-messages";
 import {
   PLAYBACK_STATE_INDEX,
