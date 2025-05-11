@@ -6,6 +6,8 @@ const workletBuildOutput = await Bun.build({
   // minify: true,
 });
 
-console.log("[build-worklet] Worklet build completed - BuildOutput:", workletBuildOutput, "\n");
+console.log(
+  `[build-worklet] Worklet build ${workletBuildOutput.success ? "complete" : "failed"} (${workletBuildOutput.outputs[0].hash})\n`
+);
 
 export {};

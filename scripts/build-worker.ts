@@ -6,6 +6,8 @@ const workerBuildOutput = await Bun.build({
   // minify: true,
 });
 
-console.log("[build-worker] Worker build completed - BuildOutput:", workerBuildOutput, "\n");
+console.log(
+  `[build-worker] Worker build ${workerBuildOutput.success ? "complete" : "failed"} (${workerBuildOutput.outputs[0].hash})\n`
+);
 
 export {};

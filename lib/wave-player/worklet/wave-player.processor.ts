@@ -126,7 +126,7 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
       
       // Only proceed if playing 
       if (!isPlaying) {
-        console.trace("[WavePlayer Processor] Paused, outputting silence.");
+        // console.trace("[WavePlayer Processor] Paused, outputting silence.");
         this.outputSilence(outputs);
         return true; // Keep processor alive while paused
       }

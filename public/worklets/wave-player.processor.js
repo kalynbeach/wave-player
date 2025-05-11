@@ -176,7 +176,6 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
       }
       const isPlaying = Atomics.load(this.stateBufferView, PLAYBACK_STATE_INDEX) === 1;
       if (!isPlaying) {
-        console.trace("[WavePlayer Processor] Paused, outputting silence.");
         this.outputSilence(outputs);
         return true;
       }
