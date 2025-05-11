@@ -28,7 +28,6 @@ export function WavePlayer({ tracks, initialTrackIndex = 0 }: WavePlayerProps) {
       } else {
         const isProviderInitialized = state.status !== "initializing";
         const isDifferentTrack = state.currentTrack?.id !== tracks[validIndex].id;
-        // const needsLoad = isProviderInitialized && (isDifferentTrack || state.status === "idle" || state.status === "ended" || state.status === "error");
         const needsLoad = isProviderInitialized && (isDifferentTrack || state.status === "idle" || state.status === "ended");
         console.log("[WavePlayer] isProviderInitialized:", isProviderInitialized);
         console.log("[WavePlayer] isDifferentTrack:", isDifferentTrack);
@@ -54,8 +53,6 @@ export function WavePlayer({ tracks, initialTrackIndex = 0 }: WavePlayerProps) {
   const handlePreviousTrack = () => {
     setCurrentTrackIndex((prevIndex) => (prevIndex - 1 + tracks.length) % tracks.length);
   };
-
-  // const currentTrack = state.currentTrack;
 
   return (
     <Card className="wave-player bg-background aspect-[5/7] w-[380px] gap-1 rounded-sm border p-1">

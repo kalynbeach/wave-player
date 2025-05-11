@@ -135,7 +135,10 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
     const processorOptions = options?.processorOptions;
     if (!processorOptions || !processorOptions.ringBufferDataSab || !processorOptions.stateBufferSab || !processorOptions.numChannels) {
       console.error("[WavePlayer Processor] Missing required options (SABs, numChannels). Cannot initialize RingBuffer.");
-      this.port.postMessage({ type: "ERROR", message: "Processor initialization failed: Missing SABs or channels." });
+      this.port.postMessage({
+        type: "ERROR",
+        message: "Processor initialization failed: Missing SABs or channels."
+      });
       return;
     }
     this.stateBufferView = new Int32Array(processorOptions.stateBufferSab);
@@ -149,7 +152,10 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
     } catch (error) {
       console.error("[WavePlayer Processor] Error initializing RingBuffer:", error);
       this.ringBuffer = null;
-      this.port.postMessage({ type: "ERROR", message: `Processor RingBuffer init failed: ${error instanceof Error ? error.message : String(error)}` });
+      this.port.postMessage({
+        type: "ERROR",
+        message: `Processor RingBuffer init failed: ${error instanceof Error ? error.message : String(error)}`
+      });
     }
     this.port.onmessage = (event) => {
       console.log("[WavePlayer Processor] Received message:", event.data);
@@ -158,51 +164,63 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
     console.log("[WavePlayer Processor] Processor construction complete.");
   }
   process(_inputs, outputs, _parameters) {
-    if (!this.ringBuffer) {
-      this.outputSilence(outputs);
-      return true;
-    }
-    if (!this.stateBufferView) {
-      console.warn("[WavePlayer Processor] State buffer view not available, outputting silence.");
-      this.outputSilence(outputs);
-      return true;
-    }
-    const isPlaying = Atomics.load(this.stateBufferView, PLAYBACK_STATE_INDEX) === 1;
-    if (!isPlaying) {
-      this.outputSilence(outputs);
-      return true;
-    }
-    const output = outputs[0];
-    const numOutputChannels = output.length;
-    const bufferSize = output[0]?.length ?? 0;
-    if (numOutputChannels === 0 || bufferSize === 0) {
-      return true;
-    }
-    if (numOutputChannels !== this.numChannels) {
-      console.warn(`[WavePlayer Processor] Mismatch between RingBuffer channels (${this.numChannels}) and output channels (${numOutputChannels}). Outputting silence.`);
-      this.outputSilence(outputs);
-      return true;
-    }
-    if (this.tempReadBuffer[0].length !== bufferSize) {
-      console.warn(`[WavePlayer Processor] Output buffer size changed to ${bufferSize}. Resizing temp buffer.`);
-      for (let i = 0;i < this.numChannels; ++i) {
-        this.tempReadBuffer[i] = new Float32Array(bufferSize);
+    try {
+      if (!this.ringBuffer) {
+        this.outputSilence(outputs);
+        return true;
       }
-    }
-    if (this.ringBuffer.read(this.tempReadBuffer)) {
-      for (let channel = 0;channel < this.numChannels; ++channel) {
-        const outputChannel = output[channel];
-        const tempChannel = this.tempReadBuffer[channel];
-        if (outputChannel && tempChannel) {
-          outputChannel.set(tempChannel);
-        } else {
-          console.error(`[WavePlayer Processor] Error accessing channel ${channel} during copy.`);
-          this.outputSilence(outputs);
-          return true;
+      if (!this.stateBufferView) {
+        console.warn("[WavePlayer Processor] State buffer view not available, outputting silence.");
+        this.outputSilence(outputs);
+        return true;
+      }
+      const isPlaying = Atomics.load(this.stateBufferView, PLAYBACK_STATE_INDEX) === 1;
+      if (!isPlaying) {
+        console.trace("[WavePlayer Processor] Paused, outputting silence.");
+        this.outputSilence(outputs);
+        return true;
+      }
+      const output = outputs[0];
+      const numOutputChannels = output.length;
+      const bufferSize = output[0]?.length ?? 0;
+      if (numOutputChannels === 0 || bufferSize === 0) {
+        console.warn("[WavePlayer Processor] Invalid output buffer structure.");
+        return true;
+      }
+      if (numOutputChannels !== this.numChannels) {
+        console.warn(`[WavePlayer Processor] Mismatch between RingBuffer channels (${this.numChannels}) and output channels (${numOutputChannels}). Outputting silence.`);
+        this.outputSilence(outputs);
+        return true;
+      }
+      if (this.tempReadBuffer[0].length !== bufferSize) {
+        console.warn(`[WavePlayer Processor] Output buffer size changed to ${bufferSize}. Resizing temp buffer.`);
+        for (let i = 0;i < this.numChannels; ++i) {
+          this.tempReadBuffer[i] = new Float32Array(bufferSize);
         }
       }
-    } else {
+      if (this.ringBuffer.read(this.tempReadBuffer)) {
+        for (let channel = 0;channel < this.numChannels; ++channel) {
+          const outputChannel = output[channel];
+          const tempChannel = this.tempReadBuffer[channel];
+          if (outputChannel && tempChannel) {
+            outputChannel.set(tempChannel);
+          } else {
+            console.error(`[WavePlayer Processor] Error accessing channel ${channel} during copy.`);
+            this.outputSilence(outputs);
+            return true;
+          }
+        }
+      } else {
+        console.warn(`[WavePlayer Processor] RingBuffer starved. Available: ${this.ringBuffer.availableRead}. Outputting silence.`);
+        this.outputSilence(outputs);
+      }
+    } catch (error) {
+      console.error("[WavePlayer Processor] Error during process method:", error);
       this.outputSilence(outputs);
+      this.port.postMessage({
+        type: "ERROR",
+        message: `Processor error: ${error instanceof Error ? error.message : String(error)}`
+      });
     }
     return true;
   }

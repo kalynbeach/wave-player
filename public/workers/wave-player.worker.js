@@ -314,12 +314,18 @@ function handleInitialize(command) {
   console.log("[WavePlayer Worker] Initializing with SABs...");
   if (!command.ringBufferSab || command.ringBufferSab.byteLength === 0) {
     console.error("[WavePlayer Worker] Invalid RingBuffer Data SAB received.");
-    postWorkerMessage({ type: "ERROR", message: "Initialization failed: Invalid audio data buffer." });
+    postWorkerMessage({
+      type: "ERROR",
+      message: "Initialization failed: Invalid audio data buffer."
+    });
     return;
   }
   if (!command.stateBufferSab || command.stateBufferSab.byteLength === 0) {
     console.error("[WavePlayer Worker] Invalid State SAB received.");
-    postWorkerMessage({ type: "ERROR", message: "Initialization failed: Invalid state buffer." });
+    postWorkerMessage({
+      type: "ERROR",
+      message: "Initialization failed: Invalid state buffer."
+    });
     return;
   }
   ringBufferDataSab = command.ringBufferSab;
@@ -330,7 +336,10 @@ function handleInitialize(command) {
     Atomics.store(stateBufferView, PLAYBACK_STATE_INDEX, 0);
   } else {
     console.error("[WavePlayer Worker] State SAB is null after assignment in handleInitialize!");
-    postWorkerMessage({ type: "ERROR", message: "Initialization failed: Internal state buffer error." });
+    postWorkerMessage({
+      type: "ERROR",
+      message: "Initialization failed: Internal state buffer error."
+    });
     return;
   }
   updateStatus("idle");
@@ -537,7 +546,10 @@ async function fetchAndParseHeader(url) {
         headerInfo.dataOffset = offset + 8;
         headerInfo.dataSize = chunkSize;
         dataChunkFound = true;
-        console.log("[WavePlayer Worker] Parsed 'data' chunk info:", { dataOffset: headerInfo.dataOffset, dataSize: headerInfo.dataSize });
+        console.log("[WavePlayer Worker] Parsed 'data' chunk info:", {
+          dataOffset: headerInfo.dataOffset,
+          dataSize: headerInfo.dataSize
+        });
       } else {
         console.log(`[WavePlayer Worker] Skipping chunk '${chunkId}' at offset ${offset}`);
       }
@@ -712,8 +724,25 @@ function handleFetchedWavChunk(chunkBuffer) {
       default:
         throw new Error(`Unsupported bit depth: ${bitsPerSample}`);
     }
-    if (!ringBuffer?.write(planarData)) {
-      console.warn(`[WavePlayer Worker] RingBuffer full while writing WAV data. Dropping ${numFrames} frames.`);
+    let hasInvalidData = false;
+    for (let ch = 0;ch < numChannels; ++ch) {
+      for (let i = 0;i < numFrames; ++i) {
+        const sample = planarData[ch][i];
+        if (isNaN(sample) || !isFinite(sample)) {
+          console.error(`[WavePlayer Worker] Invalid float detected in WAV chunk! Channel: ${ch}, Frame: ${i}, Value: ${sample}, BitDepth: ${bitsPerSample}, Format: ${format}`);
+          hasInvalidData = true;
+          break;
+        }
+      }
+      if (hasInvalidData)
+        break;
+    }
+    if (!hasInvalidData) {
+      if (!ringBuffer?.write(planarData)) {
+        console.warn(`[WavePlayer Worker] RingBuffer full while writing WAV data. Dropping ${numFrames} frames.`);
+      }
+    } else {
+      console.warn(`[WavePlayer Worker] Skipping write of WAV chunk due to invalid data.`);
     }
   } catch (error) {
     console.error("[WavePlayer Worker] Error processing WAV chunk:", error);
@@ -895,7 +924,12 @@ function handleDecodedChunk(decodedData) {
     return;
   }
   if (!reportedTrackReady) {
-    console.log("[WavePlayer Worker] First audio data processed:", { sampleRate, numberOfChannels, format, duration });
+    console.log("[WavePlayer Worker] First audio data processed:", {
+      sampleRate,
+      numberOfChannels,
+      format,
+      duration
+    });
     postWorkerMessage({
       type: "TRACK_READY",
       trackId: currentTrackId,
@@ -916,7 +950,11 @@ function handleDecodedChunk(decodedData) {
     }
     try {
       for (let i = 0;i < numberOfChannels; ++i) {
-        decodedData.copyTo(channelData[i], { planeIndex: i, frameOffset: 0, frameCount: numberOfFrames });
+        decodedData.copyTo(channelData[i], {
+          planeIndex: i,
+          frameOffset: 0,
+          frameCount: numberOfFrames
+        });
       }
       if (!ringBuffer.write(channelData)) {
         console.warn(`[WavePlayer Worker] RingBuffer full. Dropping ${numberOfFrames} samples.`);
@@ -948,6 +986,7 @@ function handleDecodeError(error) {
 }
 self.onmessage = (event) => {
   const command = event.data;
+  console.log("[WavePlayer Worker] Received command:", command.type);
   switch (command.type) {
     case "INITIALIZE":
       handleInitialize(command);
@@ -972,7 +1011,11 @@ self.onmessage = (event) => {
         updateStatus("playing");
       } else if (!stateBufferView) {
         console.error("[WavePlayer Worker] Cannot PLAY: State buffer view not available.");
-        postWorkerMessage({ type: "ERROR", message: "Internal error: Playback state cannot be controlled.", trackId: currentTrackId ?? undefined });
+        postWorkerMessage({
+          type: "ERROR",
+          message: "Internal error: Playback state cannot be controlled.",
+          trackId: currentTrackId ?? undefined
+        });
       } else {
         console.warn(`[WavePlayer Worker] Cannot PLAY in current status: ${currentStatus}`);
       }
@@ -984,7 +1027,11 @@ self.onmessage = (event) => {
         updateStatus("paused");
       } else if (!stateBufferView) {
         console.error("[WavePlayer Worker] Cannot PAUSE: State buffer view not available.");
-        postWorkerMessage({ type: "ERROR", message: "Internal error: Playback state cannot be controlled.", trackId: currentTrackId ?? undefined });
+        postWorkerMessage({
+          type: "ERROR",
+          message: "Internal error: Playback state cannot be controlled.",
+          trackId: currentTrackId ?? undefined
+        });
       } else {
         console.warn(`[WavePlayer Worker] Cannot PAUSE in current status: ${currentStatus}`);
       }

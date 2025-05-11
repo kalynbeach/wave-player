@@ -9,7 +9,10 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
-import type { WavePlayerStatus, WavePlayerTrack } from "@/lib/wave-player/types/wave-player";
+import type {
+  WavePlayerStatus,
+  WavePlayerTrack,
+} from "@/lib/wave-player/types/wave-player";
 import type {
   ProviderCommand,
   WorkerMessage,
@@ -25,8 +28,18 @@ const RING_BUFFER_SIZE_BYTES = 1024 * 1024 * 30; // 30 MB for audio samples
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const STATE_BUFFER_SIZE_BYTES = 16; // Small buffer for atomic state flags (e.g., playing)
 
-// === State ===
+export function createAudioContext(options?: AudioContextOptions) {
+  if (typeof window === "undefined") return null;
 
+  const defaultOptions: AudioContextOptions = {
+    sampleRate: 48000,
+    latencyHint: "playback",
+  };
+
+  return new AudioContext(options ?? defaultOptions);
+}
+
+// === State ===
 interface WavePlayerState {
   status: WavePlayerStatus;
   currentTrack: WavePlayerTrack | null;
@@ -61,16 +74,18 @@ type WavePlayerAction =
   | { type: "SET_LOADING_PROGRESS"; payload: number }
   | { type: "SET_ERROR"; payload: string | null }
   | { type: "WORKER_INITIALIZED" }
-  | { type: "WORKER_TRACK_READY"; payload: { trackId: string; duration: number } }
+  | {
+      type: "WORKER_TRACK_READY";
+      payload: { trackId: string; duration: number };
+    }
   | { type: "WORKER_TRACK_ENDED"; payload: { trackId: string } }
   | {
       type: "WORKER_TIME_UPDATE";
       payload: { trackId: string; currentTime: number };
     };
-// Add more actions corresponding to WorkerMessages
+// NOTE: Add more actions corresponding to WorkerMessages as needed
 
 // === Reducer ===
-
 function wavePlayerReducer(
   state: WavePlayerState,
   action: WavePlayerAction
@@ -140,7 +155,6 @@ function wavePlayerReducer(
 }
 
 // === Context ===
-
 interface WavePlayerContextValue {
   state: WavePlayerState;
   // Define controls methods (placeholders for now)
@@ -158,7 +172,6 @@ const WavePlayerContext = createContext<WavePlayerContextValue | undefined>(
 );
 
 // === Provider ===
-
 interface WavePlayerProviderProps {
   children: React.ReactNode;
 }
@@ -235,20 +248,32 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
       let worker: Worker | null = null; // Define worker locally for initialization
       try {
         // 1. Create SharedArrayBuffers
-        ringBufferSabRef.current = new SharedArrayBuffer(RING_BUFFER_SIZE_BYTES);
-        stateBufferSabRef.current = new SharedArrayBuffer(STATE_ARRAY_LENGTH * Int32Array.BYTES_PER_ELEMENT);
+        ringBufferSabRef.current = new SharedArrayBuffer(
+          RING_BUFFER_SIZE_BYTES
+        );
+        stateBufferSabRef.current = new SharedArrayBuffer(
+          STATE_ARRAY_LENGTH * Int32Array.BYTES_PER_ELEMENT
+        );
         if (stateBufferSabRef.current) {
           const stateView = new Int32Array(stateBufferSabRef.current);
           Atomics.store(stateView, PLAYBACK_STATE_INDEX, 0); // Set initial state to paused
-          console.log("[WavePlayerProvider] Initialized playback state in SAB to paused.");
+          console.log(
+            "[WavePlayerProvider] Initialized playback state in SAB to paused."
+          );
         } else {
           throw new Error("Failed to create State SharedArrayBuffer.");
         }
         console.log("[WavePlayerProvider] Created SharedArrayBuffers.");
 
         // 2. Create AudioContext and GainNode
-        const context = new AudioContext();
+        const context = createAudioContext();
         audioContextRef.current = context;
+        if (context === null) {
+          throw new Error(
+            "[WavePlayerProvider] AudioContext is not available."
+          );
+        }
+
         const gainNode = context.createGain();
         gainNode.gain.setValueAtTime(state.volume, context.currentTime);
         gainNode.connect(context.destination);
@@ -256,8 +281,10 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         console.log("[WavePlayerProvider] AudioContext and GainNode created.");
 
         // 3. Create Worker instance and setup message/error handlers
-        // const workerUrl = new URL("../lib/wave-player/worker/wave-player.worker.ts", import.meta.url);
-        const workerUrl = new URL("../public/workers/wave-player.worker.js", import.meta.url);
+        const workerUrl = new URL(
+          "../public/workers/wave-player.worker.js",
+          import.meta.url
+        );
         console.log("[WavePlayerProvider] Worker URL:", workerUrl.toString());
         worker = new Worker(workerUrl, { type: "module" });
         workerRef.current = worker; // Store reference immediately
@@ -265,44 +292,63 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         worker.onerror = (error) => {
           if (didCancel) return; // Ignore errors during cleanup
           console.error("[WavePlayerProvider] Worker onerror:", error);
-          dispatch({ type: "SET_ERROR", payload: `Worker error: ${error.message}` });
+          dispatch({
+            type: "SET_ERROR",
+            payload: `Worker error: ${error.message}`,
+          });
           // Consider cleanup or state reset if worker fails critically
         };
         console.log("[WavePlayerProvider] Worker created.");
 
         // 4. Add AudioWorklet module (critical step)
-        // const workletUrl = new URL("../lib/wave-player/worklet/wave-player.processor.ts", import.meta.url);
-        const workletUrl = new URL("../public/worklets/wave-player.processor.js", import.meta.url);
+        const workletUrl = new URL(
+          "../public/worklets/wave-player.processor.js",
+          import.meta.url
+        );
         console.log("[WavePlayerProvider] Worklet URL:", workletUrl.toString());
-        // --- MODIFICATION START ---
-        // Construct path relative to public assuming Next.js output structure
-        // NOTE: The exact path might need adjustment after checking the build output's static/media folder.
-        // const workletUrl = "/_next/static/chunks/lib_wave-player_worklet_wave-player_processor_ts.js"; // Example path - VERIFY THIS
-        // console.log("[WavePlayerProvider] Worklet path (relative):", workletUrl);
-        // --- MODIFICATION END ---
+
         try {
-          // await context.audioWorklet.addModule(workletUrl.toString()); // Original line
           await context.audioWorklet.addModule(workletUrl); // Use relative path directly
-          console.log("[WavePlayerProvider] AudioWorklet module added successfully.");
+          console.log(
+            "[WavePlayerProvider] AudioWorklet module added successfully."
+          );
         } catch (addModuleError) {
-          console.error("[WavePlayerProvider] Failed to add AudioWorklet module:", addModuleError);
+          console.error(
+            "[WavePlayerProvider] Failed to add AudioWorklet module:",
+            addModuleError
+          );
           throw addModuleError; // Re-throw to be caught by the outer try-catch
         }
 
         // 5. Create AudioWorkletNode (only if addModule succeeded)
         if (!ringBufferSabRef.current || !stateBufferSabRef.current) {
-            throw new Error("SharedArrayBuffers became unavailable before creating WorkletNode.");
+          throw new Error(
+            "SharedArrayBuffers became unavailable before creating WorkletNode."
+          );
         }
-        const workletNode = new AudioWorkletNode(context, "wave-player-processor", {
-          processorOptions: {
-            ringBufferDataSab: ringBufferSabRef.current,
-            stateBufferSab: stateBufferSabRef.current,
-            numChannels: 2, // Assume Stereo
-          },
-        });
+        if (context === null) {
+          console.error("[WavePlayerProvider] AudioContext is not available.");
+          return;
+        }
+        const workletNode = new AudioWorkletNode(
+          context,
+          "wave-player-processor",
+          {
+            // Explicitly set the output channel count to match the expected stereo output
+            // This ensures the processor receives the correct number of output buffers.
+            outputChannelCount: [2],
+            processorOptions: {
+              ringBufferDataSab: ringBufferSabRef.current,
+              stateBufferSab: stateBufferSabRef.current,
+              numChannels: 2, // Assume Stereo
+            },
+          }
+        );
         workletNode.connect(gainNode);
         workletNodeRef.current = workletNode;
-        console.log("[WavePlayerProvider] AudioWorkletNode created and connected.");
+        console.log(
+          "[WavePlayerProvider] AudioWorkletNode created and connected."
+        );
 
         // 6. Send Initialize command to Worker (now that worklet is ready)
         const initializeCommand: ProviderCommand = {
@@ -315,7 +361,6 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         console.log("[WavePlayerProvider] Sent INITIALIZE command to worker.");
 
         // State will transition to 'idle' via worker message
-
       } catch (error) {
         if (!didCancel) {
           console.error("[WavePlayerProvider] Initialization failed:", error);
@@ -332,7 +377,10 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
           workletNodeRef.current = null;
           gainNodeRef.current?.disconnect();
           gainNodeRef.current = null;
-          if (audioContextRef.current && audioContextRef.current.state !== "closed") {
+          if (
+            audioContextRef.current &&
+            audioContextRef.current.state !== "closed"
+          ) {
             audioContextRef.current.close().catch(console.error);
           }
           audioContextRef.current = null;
@@ -413,7 +461,8 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
 
       // Allow INITIALIZE and TERMINATE commands even during "initializing" state.
       // Block other commands if the status is initializing.
-      const allowedDuringInit = command.type === "INITIALIZE" || command.type === "TERMINATE";
+      const allowedDuringInit =
+        command.type === "INITIALIZE" || command.type === "TERMINATE";
       if (!allowedDuringInit && state.status === "initializing") {
         console.warn(
           `[WavePlayerProvider] Blocked command (${command.type}) while status is initializing.`
@@ -422,7 +471,11 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         return;
       }
 
-      console.log("[WavePlayerProvider] Posting command:", command.type, command);
+      console.log(
+        "[WavePlayerProvider] Posting command:",
+        command.type,
+        command
+      );
       workerRef.current.postMessage(command);
     },
     [state.status] // Dependency is correct
@@ -447,7 +500,9 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         audioContextRef.current
           .resume()
           .then(() => {
-            console.log("[WavePlayerProvider] AudioContext resumed.");
+            console.log(
+              `[WavePlayerProvider] AudioContext resumed. New state: ${audioContextRef.current?.state}`
+            );
             postCommandToWorker({ type: "PLAY" });
           })
           .catch((err) => {
@@ -464,7 +519,9 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
         postCommandToWorker({ type: "PLAY" });
       }
     } else {
-      console.warn(`[WavePlayerProvider] Cannot play in status: ${state.status}`);
+      console.warn(
+        `[WavePlayerProvider] Cannot play in status: ${state.status}`
+      );
     }
   }, [state.status, postCommandToWorker]);
 
@@ -533,7 +590,6 @@ export function WavePlayerProvider({ children }: WavePlayerProviderProps) {
 }
 
 // === Hook ===
-
 export function useWavePlayer() {
   const context = useContext(WavePlayerContext);
   if (context === undefined) {

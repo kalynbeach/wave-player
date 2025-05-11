@@ -1,9 +1,6 @@
 /// <reference types="@types/audioworklet" />
 
-import {
-  RingBuffer,
-  PLAYBACK_STATE_INDEX,
-} from "../worker/ring-buffer";
+import { RingBuffer, PLAYBACK_STATE_INDEX } from "../worker/ring-buffer";
 
 // Define processor options structure
 interface WavePlayerProcessorOptions extends AudioWorkletNodeOptions {
@@ -47,7 +44,10 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
       );
       // No way to recover here, processor will likely output silence.
       // We could throw, but worklet environment might handle errors differently.
-      this.port.postMessage({ type: "ERROR", message: "Processor initialization failed: Missing SABs or channels." });
+      this.port.postMessage({
+        type: "ERROR",
+        message: "Processor initialization failed: Missing SABs or channels.",
+      });
       return; // Exit constructor
     }
 
@@ -70,14 +70,16 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
         // AudioWorklet process typically uses 128 frames
         this.tempReadBuffer.push(new Float32Array(128));
       }
-
     } catch (error) {
       console.error(
         "[WavePlayer Processor] Error initializing RingBuffer:",
         error
       );
       this.ringBuffer = null; // Ensure it's null on error
-      this.port.postMessage({ type: "ERROR", message: `Processor RingBuffer init failed: ${error instanceof Error ? error.message : String(error)}` });
+      this.port.postMessage({
+        type: "ERROR",
+        message: `Processor RingBuffer init failed: ${error instanceof Error ? error.message : String(error)}`,
+      });
     }
 
     // TODO (Phase 4): Add message listener for play/pause state from worker?
@@ -103,75 +105,98 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _parameters: Record<string, Float32Array>
   ): boolean {
-    if (!this.ringBuffer) {
-      // console.trace("[WavePlayer Processor] RingBuffer not available, outputting silence.");
-      this.outputSilence(outputs);
-      return true; // Keep processor alive
-    }
+    try {
+      if (!this.ringBuffer) {
+        // console.trace("[WavePlayer Processor] RingBuffer not available, outputting silence.");
+        this.outputSilence(outputs);
+        return true; // Keep processor alive
+      }
 
-    // Check playback state using Atomics
-    if (!this.stateBufferView) {
-      console.warn("[WavePlayer Processor] State buffer view not available, outputting silence.");
-      this.outputSilence(outputs); // Output silence if state cannot be read
-      return true;
-    }
+      // Check playback state using Atomics
+      if (!this.stateBufferView) {
+        console.warn(
+          "[WavePlayer Processor] State buffer view not available, outputting silence."
+        );
+        this.outputSilence(outputs); // Output silence if state cannot be read
+        return true;
+      }
 
-    const isPlaying = Atomics.load(this.stateBufferView, PLAYBACK_STATE_INDEX) === 1;
+      const isPlaying =
+        Atomics.load(this.stateBufferView, PLAYBACK_STATE_INDEX) === 1;
+      
+      // Only proceed if playing 
+      if (!isPlaying) {
+        console.trace("[WavePlayer Processor] Paused, outputting silence.");
+        this.outputSilence(outputs);
+        return true; // Keep processor alive while paused
+      }
 
-    if (!isPlaying) {
-      // console.trace("[WavePlayer Processor] Paused, outputting silence.");
-      this.outputSilence(outputs);
-      return true; // Keep processor alive while paused
-    }
+      const output = outputs[0]; // Primary output node
+      const numOutputChannels = output.length;
+      const bufferSize = output[0]?.length ?? 0; // Typically 128 frames
 
-    // --- Only proceed if playing --- 
-
-    const output = outputs[0]; // Primary output node
-    const numOutputChannels = output.length;
-    const bufferSize = output[0]?.length ?? 0; // Typically 128 frames
-
-    // Validate output structure
-    if (numOutputChannels === 0 || bufferSize === 0) {
-        // console.warn("[WavePlayer Processor] Invalid output buffer structure.");
+      // Validate output structure
+      if (numOutputChannels === 0 || bufferSize === 0) {
+        console.warn("[WavePlayer Processor] Invalid output buffer structure.");
         return true; // Keep alive
-    }
-    if (numOutputChannels !== this.numChannels) {
-        console.warn(`[WavePlayer Processor] Mismatch between RingBuffer channels (${this.numChannels}) and output channels (${numOutputChannels}). Outputting silence.`);
+      }
+      if (numOutputChannels !== this.numChannels) {
+        console.warn(
+          `[WavePlayer Processor] Mismatch between RingBuffer channels (${this.numChannels}) and output channels (${numOutputChannels}). Outputting silence.`
+        );
         this.outputSilence(outputs);
         return true;
-    }
+      }
 
-     // Resize temp buffer if needed (shouldn't happen with standard 128 block size)
-    if (this.tempReadBuffer[0].length !== bufferSize) {
-        console.warn(`[WavePlayer Processor] Output buffer size changed to ${bufferSize}. Resizing temp buffer.`);
+      // Resize temp buffer if needed (shouldn't happen with standard 128 block size)
+      if (this.tempReadBuffer[0].length !== bufferSize) {
+        console.warn(
+          `[WavePlayer Processor] Output buffer size changed to ${bufferSize}. Resizing temp buffer.`
+        );
         for (let i = 0; i < this.numChannels; ++i) {
-            this.tempReadBuffer[i] = new Float32Array(bufferSize);
+          this.tempReadBuffer[i] = new Float32Array(bufferSize);
         }
-    }
+      }
 
-    // Attempt to read from the RingBuffer into the temporary buffer
-    if (this.ringBuffer.read(this.tempReadBuffer)) {
+      // Attempt to read from the RingBuffer into the temporary buffer
+      if (this.ringBuffer.read(this.tempReadBuffer)) {
         // Read successful, copy data from temp buffer to the actual output buffers
         for (let channel = 0; channel < this.numChannels; ++channel) {
-            const outputChannel = output[channel];
-            const tempChannel = this.tempReadBuffer[channel];
-             if (outputChannel && tempChannel) {
-                outputChannel.set(tempChannel);
-             } else {
-                 console.error(`[WavePlayer Processor] Error accessing channel ${channel} during copy.`);
-                 // Fallback to silence for this block if something is wrong
-                 this.outputSilence(outputs);
-                 return true;
-             }
+          const outputChannel = output[channel];
+          const tempChannel = this.tempReadBuffer[channel];
+          if (outputChannel && tempChannel) {
+            outputChannel.set(tempChannel);
+          } else {
+            console.error(
+              `[WavePlayer Processor] Error accessing channel ${channel} during copy.`
+            );
+            // Fallback to silence for this block if something is wrong
+            this.outputSilence(outputs);
+            return true;
+          }
         }
-    } else {
-      // Not enough data available in the RingBuffer, output silence
-      this.outputSilence(outputs);
-      // console.trace(`[WavePlayer Processor] RingBuffer starved (Available: ${this.ringBuffer.availableRead}). Outputting silence.`);
+      } else {
+        // Not enough data available in the RingBuffer, output silence
+        console.warn(
+          `[WavePlayer Processor] RingBuffer starved. Available: ${this.ringBuffer.availableRead}. Outputting silence.`
+        ); // Enhanced log
+        this.outputSilence(outputs);
+        // console.trace(`[WavePlayer Processor] RingBuffer starved (Available: ${this.ringBuffer.availableRead}). Outputting silence.`);
+      }
+
+      // TODO (Phase 4): Check playback state (via Atomics/message) - if paused, output silence regardless of buffer content
+    } catch (error) {
+      console.error(
+        "[WavePlayer Processor] Error during process method:",
+        error
+      );
+      this.outputSilence(outputs); // Output silence on error
+      this.port.postMessage({
+        type: "ERROR",
+        message: `Processor error: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      // Decide whether to return false (kill worklet) or true (keep trying)
     }
-
-    // TODO (Phase 4): Check playback state (via Atomics/message) - if paused, output silence regardless of buffer content
-
     return true; // Keep processor alive
   }
 
@@ -181,30 +206,25 @@ class WavePlayerProcessor extends AudioWorkletProcessor {
     if (!output) return;
 
     output.forEach((channel) => {
-      if (channel instanceof Float32Array && typeof channel.fill === "function") {
+      if (
+        channel instanceof Float32Array &&
+        typeof channel.fill === "function"
+      ) {
         channel.fill(0);
       }
     });
   }
-
 }
 
 try {
   registerProcessor("wave-player-processor", WavePlayerProcessor);
   console.log("[WavePlayer Processor] Registered WavePlayerProcessor.");
 } catch (error) {
-  console.error(
-    "[WavePlayer Processor] Error registering processor:",
-    error
-  );
+  console.error("[WavePlayer Processor] Error registering processor:", error);
   // If registration fails, the worklet is unusable.
   // Throwing might be appropriate to signal a critical failure.
   throw error;
 }
 
 // TODO: should export like this?
-export {
-  RingBuffer,
-  PLAYBACK_STATE_INDEX,
-  WavePlayerProcessor,
-};
+export { RingBuffer, PLAYBACK_STATE_INDEX, WavePlayerProcessor };
