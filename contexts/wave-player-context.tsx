@@ -33,7 +33,7 @@ export function createAudioContext(options?: AudioContextOptions) {
 
   const defaultOptions: AudioContextOptions = {
     sampleRate: 48000,
-    latencyHint: "playback",
+    latencyHint: "interactive",
   };
 
   return new AudioContext(options ?? defaultOptions);
