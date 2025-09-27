@@ -1,5 +1,6 @@
 /// <reference lib="webworker" />
 /// <reference types="@types/dom-webcodecs" />
+
 // lib/wave-player/worker/audio-fetcher.ts
 class AudioFetcher {
   callbacks;

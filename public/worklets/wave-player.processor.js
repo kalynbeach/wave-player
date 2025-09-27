@@ -1,4 +1,5 @@
 /// <reference types="@types/audioworklet" />
+
 // lib/wave-player/worker/ring-buffer.ts
 var READ_POINTER_INDEX = 0;
 var WRITE_POINTER_INDEX = 1;
